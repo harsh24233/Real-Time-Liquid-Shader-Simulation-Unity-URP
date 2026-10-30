@@ -193,12 +193,12 @@ The controller [`ArbitraryViscousFluidFriction.cs`](file:///d:/IP%20unity/Liquid
    - Vegetable Oil ($\mu = 0.050\ \text{Pa}\cdot\text{s}$): smooth laminar flow, moderate damping.
    - Honey ($\mu = 10.0\ \text{Pa}\cdot\text{s}$): near-critical damping, delayed sluggish displacement.
    - Ketchup ($\mu = 50.0\ \text{Pa}\cdot\text{s}$): non-Newtonian thixotropic paste, high boundary resistance, rapid settling.
-3. **Interior Surface Roughness Friction ($f_{\text{surface}}$)**:
+3. **Interior Surface Roughness Friction ($f_{\mathrm{surface}}$)**:
    - Polished Glass ($f = 0.15$), Standard Glass ($f = 0.35$), Frosted Glass ($f = 0.65$), Textured Resin ($f = 0.88$).
-4. **Geometric Tortuosity & Hydraulic Shape Factor ($\lambda_{\text{geom}}$)**:
+4. **Geometric Tortuosity & Hydraulic Shape Factor ($\lambda_{\mathrm{geom}}$)**:
    - Quantifies boundary layer friction and form drag due to narrow channels (Hourglass waist, DualBulb orifice), acute vertices (Star Prism), and spiral grooves (Twisted Column).
    - Stokes oscillating boundary shear resistance:
-     $$F_{\text{wall\_drag}} = f_{\text{surface}} \cdot \lambda_{\text{geom}} \cdot \sqrt{\rho \cdot \mu \cdot \omega_n}$$
+     $$F_{\mathrm{drag}} = f_{\mathrm{surface}} \cdot \lambda_{\mathrm{geom}} \cdot \sqrt{\rho \cdot \mu \cdot \omega_n}$$
 5. **Meniscus Wall Adhesion Cling**:
    - Simulates sticky liquid clinging to arbitrary geometry walls before gravity draws it back down.
 
@@ -221,12 +221,12 @@ The controller [`ArbitraryViscousFluidFriction.cs`](file:///d:/IP%20unity/Liquid
 
 #### In-Game Bottle Authority (Manipulate Bottles in Play Mode)
 - **Left-Click & Drag**: Click directly on **any** bottle or vessel in the scene to pick it up and move/shake it in real-time. Dynamic fluid sloshes realistically with wall friction and viscosity!
-- **Mouse Scroll Wheel**: Push or pull the dragged bottle closer or further in depth ($Z$-axis distance).
+- **Mouse Scroll Wheel**: Push or pull the dragged bottle closer or further in depth (Z-axis distance).
 - **3D Move Gizmo**: Selecting any bottle spawns an interactive in-game 3D Move Tool:
-  - **Red [X] Handle**: Drag to translate strictly along the world $X$-axis.
-  - **Green [Y] Handle**: Drag to translate strictly along the world $Y$-axis.
-  - **Blue [Z] Handle**: Drag to translate strictly along the world $Z$-axis.
-- **Arrow Keys**: Fine-nudge the selected bottle in 3D ($[\leftarrow]/[\rightarrow]$ for $X$, $[\uparrow]/[\downarrow]$ for $Y$, $[\text{Shift}+\uparrow/\downarrow]$ or $[\text{PageUp}/\text{PageDown}]$ for $Z$).
+  - **Red [X] Handle**: Drag to translate strictly along the world X-axis.
+  - **Green [Y] Handle**: Drag to translate strictly along the world Y-axis.
+  - **Blue [Z] Handle**: Drag to translate strictly along the world Z-axis.
+- **Arrow Keys**: Fine-nudge the selected bottle in 3D (`[←]` / `[→]` for X, `[↑]` / `[↓]` for Y, `[Shift + ↑ / ↓]` or `[PageUp]` / `[PageDown]` for Z).
 - **`[Q]` / `[E]`**: Tilt the bottle left or right to test static fluid level and angular slosh dynamics.
 - **`[R]`**: Instantly reset the selected bottle back to its original illuminated plinth/shelf position.
 - **`[Backspace]`**: Reset ALL bottles in the showcase back to their original positions.
