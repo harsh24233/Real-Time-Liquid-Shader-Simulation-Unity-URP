@@ -38,8 +38,8 @@ public class LiquidWobble : MonoBehaviour
     [SerializeField] private float rotateSensitivity = 0.8f;
 
     [Header("Interactive Testing (Play Mode)")]
-    [Tooltip("Allow moving the bottle using WASD or arrow keys in Play Mode.")]
-    [SerializeField] private bool enableKeyboardControls = true;
+    [Tooltip("Allow moving the bottle using arrow keys in Play Mode (disabled by default so WASD controls player camera).")]
+    [SerializeField] private bool enableKeyboardControls = false;
 
     [Tooltip("Allow dragging the bottle with the mouse in Game View.")]
     [SerializeField] private bool enableMouseDrag = true;
@@ -52,21 +52,17 @@ public class LiquidWobble : MonoBehaviour
 
     private static readonly int WobbleXProp = Shader.PropertyToID("_WobbleX");
     private static readonly int WobbleZProp = Shader.PropertyToID("_WobbleZ");
-    private static readonly int RotXProp = Shader.PropertyToID("_rotx");
-    private static readonly int RotZProp = Shader.PropertyToID("_rotz");
 
     private Vector3 lastPos;
     private Vector3 lastRot;
+    private Vector3 smoothedVelocity;
+    private Vector3 smoothedAngularVelocity;
     private Vector3 lastVelocity;
-    private Vector3 lastAngularVelocity;
 
     private float wobbleAmountX = 0f;
     private float wobbleAmountZ = 0f;
-
-    private float wobbleAmountToAddX = 0f;
-    private float wobbleAmountToAddZ = 0f;
-
-    private float pulseTime = 0f;
+    private float wobbleVelocityX = 0f;
+    private float wobbleVelocityZ = 0f;
 
     private bool isDragging = false;
     private Plane dragPlane;
@@ -104,7 +100,10 @@ public class LiquidWobble : MonoBehaviour
     private void OnDestroy()
     {
         ApplyWobble(0f, 0f);
-        if (Application.isPlaying && mat != null && liquidRenderer != null && mat != liquidRenderer.sharedMaterial)
+
+        if (Application.isPlaying && mat != null &&
+            liquidRenderer != null &&
+            mat != liquidRenderer.sharedMaterial)
         {
             Destroy(mat);
             mat = null;
@@ -118,24 +117,38 @@ public class LiquidWobble : MonoBehaviour
             lastPos = bottleTransform.position;
             lastRot = bottleTransform.eulerAngles;
         }
+        else
+        {
+            lastPos = transform.position;
+            lastRot = transform.eulerAngles;
+        }
+
+        smoothedVelocity = Vector3.zero;
+        smoothedAngularVelocity = Vector3.zero;
         lastVelocity = Vector3.zero;
-        lastAngularVelocity = Vector3.zero;
-        wobbleAmountToAddX = 0f;
-        wobbleAmountToAddZ = 0f;
         wobbleAmountX = 0f;
         wobbleAmountZ = 0f;
-        pulseTime = 0f;
+        wobbleVelocityX = 0f;
+        wobbleVelocityZ = 0f;
     }
 
     private void ResolveReferences()
     {
         if (bottleTransform == null)
         {
-            if (transform.parent != null && (transform.parent.name.ToLower().Contains("bottle") || transform.name.ToLower().Contains("water")))
+            Transform current = transform;
+            while (current.parent != null)
             {
-                bottleTransform = transform.parent;
+                string pName = current.parent.name.ToLowerInvariant();
+                if (pName.Contains("bottle") || pName.Contains("vessel") || pName.Contains("flask") || pName.Contains("jar"))
+                {
+                    bottleTransform = current.parent;
+                    break;
+                }
+                current = current.parent;
             }
-            else
+
+            if (bottleTransform == null)
             {
                 bottleTransform = transform;
             }
@@ -143,26 +156,32 @@ public class LiquidWobble : MonoBehaviour
 
         if (liquidRenderer == null)
         {
-            Transform waterChild = transform.Find("water");
-            if (waterChild != null)
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+            foreach (Renderer r in renderers)
             {
-                liquidRenderer = waterChild.GetComponent<Renderer>();
+                if (IsLiquidRenderer(r))
+                {
+                    liquidRenderer = r;
+                    break;
+                }
+            }
+
+            if (liquidRenderer == null)
+            {
+                Transform waterChild = transform.Find("water");
+                if (waterChild == null) waterChild = transform.Find("liquid");
+                if (waterChild == null) waterChild = transform.Find("Water");
+                if (waterChild == null) waterChild = transform.Find("Liquid");
+                if (waterChild != null)
+                {
+                    liquidRenderer = waterChild.GetComponent<Renderer>();
+                }
             }
 
             if (liquidRenderer == null)
             {
                 Renderer thisRend = GetComponent<Renderer>();
-                Renderer[] childRenderers = GetComponentsInChildren<Renderer>(true);
-                foreach (var r in childRenderers)
-                {
-                    if (r != thisRend && IsLiquidRenderer(r))
-                    {
-                        liquidRenderer = r;
-                        break;
-                    }
-                }
-
-                if (liquidRenderer == null && thisRend != null && IsLiquidRenderer(thisRend))
+                if (thisRend != null && IsLiquidRenderer(thisRend))
                 {
                     liquidRenderer = thisRend;
                 }
@@ -187,23 +206,20 @@ public class LiquidWobble : MonoBehaviour
 
     private bool IsLiquidRenderer(Renderer r)
     {
-        if (r == null) return false;
+        if (r == null || r.sharedMaterial == null) return false;
         Material m = r.sharedMaterial;
-        if (m == null) return false;
+        string mName = m.name.ToLowerInvariant();
+        string goName = r.gameObject.name.ToLowerInvariant();
+
         return m.HasProperty(WobbleXProp) ||
-               m.HasProperty(RotXProp) ||
-               m.name.ToLower().Contains("water") ||
-               r.gameObject.name.ToLower().Contains("water");
+               mName.Contains("water") || mName.Contains("liquid") || mName.Contains("fluid") ||
+               goName.Contains("water") || goName.Contains("liquid") || goName.Contains("fluid");
     }
 
     private void Start()
     {
         ResolveReferences();
-        if (bottleTransform != null)
-        {
-            lastPos = bottleTransform.position;
-            lastRot = bottleTransform.eulerAngles;
-        }
+        ResetTracking();
     }
 
     private void Update()
@@ -224,12 +240,15 @@ public class LiquidWobble : MonoBehaviour
             float dt = lastEditorTime > 0 ? Mathf.Clamp((float)(now - lastEditorTime), 0.001f, 0.05f) : 0.016f;
             lastEditorTime = now;
 
-            bool hadWobble = Mathf.Abs(wobbleAmountToAddX) > 0.0001f || Mathf.Abs(wobbleAmountToAddZ) > 0.0001f;
+            bool hadWobble = Mathf.Abs(wobbleAmountX) > 0.0002f || Mathf.Abs(wobbleVelocityX) > 0.0005f ||
+                             Mathf.Abs(wobbleAmountZ) > 0.0002f || Mathf.Abs(wobbleVelocityZ) > 0.0005f;
             bool moved = bottleTransform != null && (bottleTransform.position != lastPos || bottleTransform.eulerAngles != lastRot);
 
             SimulateWobble(dt);
 
-            bool hasWobble = Mathf.Abs(wobbleAmountToAddX) > 0.0001f || Mathf.Abs(wobbleAmountToAddZ) > 0.0001f;
+            bool hasWobble = Mathf.Abs(wobbleAmountX) > 0.0002f || Mathf.Abs(wobbleVelocityX) > 0.0005f ||
+                             Mathf.Abs(wobbleAmountZ) > 0.0002f || Mathf.Abs(wobbleVelocityZ) > 0.0005f;
+
             if (moved || hadWobble || hasWobble)
             {
                 EditorApplication.QueuePlayerLoopUpdate();
@@ -243,17 +262,23 @@ public class LiquidWobble : MonoBehaviour
     {
         if (bottleTransform == null) return;
 
+        // If ShowcaseCameraController is present, it centrally manages player camera movement and bottle authority.
+        if (Camera.main != null && Camera.main.GetComponent<ShowcaseCameraController>() != null)
+        {
+            return;
+        }
+
 #if ENABLE_INPUT_SYSTEM
-        var keyboard = Keyboard.current;
+        Keyboard keyboard = Keyboard.current;
         if (enableKeyboardControls && keyboard != null)
         {
             float h = 0f;
             float v = 0f;
 
-            if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed) h -= 1f;
-            if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed) h += 1f;
-            if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed) v += 1f;
-            if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed) v -= 1f;
+            if (keyboard.leftArrowKey.isPressed) h -= 1f;
+            if (keyboard.rightArrowKey.isPressed) h += 1f;
+            if (keyboard.upArrowKey.isPressed) v += 1f;
+            if (keyboard.downArrowKey.isPressed) v -= 1f;
 
             if (Mathf.Abs(h) > 0.01f || Mathf.Abs(v) > 0.01f)
             {
@@ -271,11 +296,10 @@ public class LiquidWobble : MonoBehaviour
             }
         }
 
-        var mouse = Mouse.current;
+        Mouse mouse = Mouse.current;
         if (enableMouseDrag && mouse != null && Camera.main != null)
         {
-            Vector2 mousePos = mouse.position.ReadValue();
-            Ray ray = Camera.main.ScreenPointToRay(mousePos);
+            Ray ray = Camera.main.ScreenPointToRay(mouse.position.ReadValue());
 
             if (mouse.leftButton.wasPressedThisFrame)
             {
@@ -283,7 +307,7 @@ public class LiquidWobble : MonoBehaviour
                 if (dragPlane.Raycast(ray, out float enter))
                 {
                     Vector3 hitPoint = ray.GetPoint(enter);
-                    if (Vector3.Distance(hitPoint, bottleTransform.position) < 4f)
+                    if (Vector3.Distance(hitPoint, bottleTransform.position) < 5f)
                     {
                         isDragging = true;
                         dragOffset = bottleTransform.position - hitPoint;
@@ -307,109 +331,164 @@ public class LiquidWobble : MonoBehaviour
 
     private void SimulateWobble(float dt)
     {
-        if (bottleTransform == null || dt <= 0f)
+        if (bottleTransform == null)
         {
             ResolveReferences();
             if (bottleTransform == null) return;
+            ResetTracking();
+            return;
         }
 
-        // 1. Calculate linear and angular velocities
-        Vector3 velocity = (bottleTransform.position - lastPos) / dt;
-        Vector3 acceleration = (velocity - lastVelocity) / dt;
+        if (liquidRenderer == null)
+        {
+            ResolveReferences();
+            if (liquidRenderer == null) return;
+        }
 
+        if (dt <= 0f) return;
+        dt = Mathf.Clamp(dt, 0.001f, 0.05f);
+
+        // 1. Measure motion with exponential smoothing to suppress single-frame spikes
+        Vector3 currentPos = bottleTransform.position;
         Vector3 currentRot = bottleTransform.eulerAngles;
-        Vector3 angularVelocity = Vector3.zero;
-        angularVelocity.x = Mathf.DeltaAngle(lastRot.x, currentRot.x) * Mathf.Deg2Rad / dt;
-        angularVelocity.z = Mathf.DeltaAngle(lastRot.z, currentRot.z) * Mathf.Deg2Rad / dt;
-        Vector3 angularAcceleration = (angularVelocity - lastAngularVelocity) / dt;
 
-        // 2. Add impulse based on motion
-        float impulseX = (-velocity.z * moveSensitivity * 0.5f) - (acceleration.z * moveSensitivity * 0.02f)
-                       + (angularVelocity.x * rotateSensitivity * 0.2f) - (angularAcceleration.x * rotateSensitivity * 0.02f);
-        float impulseZ = (velocity.x * moveSensitivity * 0.5f) - (acceleration.x * moveSensitivity * 0.02f)
-                       + (angularVelocity.z * rotateSensitivity * 0.2f) - (angularAcceleration.z * rotateSensitivity * 0.02f);
+        Vector3 rawVelocity = (currentPos - lastPos) / dt;
+        Vector3 rawAngularVelocity = new Vector3(
+            Mathf.DeltaAngle(lastRot.x, currentRot.x),
+            Mathf.DeltaAngle(lastRot.y, currentRot.y),
+            Mathf.DeltaAngle(lastRot.z, currentRot.z)
+        ) * Mathf.Deg2Rad / dt;
 
-        wobbleAmountToAddX += impulseX;
-        wobbleAmountToAddZ += impulseZ;
+        float filterWeight = Mathf.Clamp01(dt * 20f);
+        smoothedVelocity = Vector3.Lerp(smoothedVelocity, rawVelocity, filterWeight);
+        smoothedAngularVelocity = Vector3.Lerp(smoothedAngularVelocity, rawAngularVelocity, filterWeight);
 
-        wobbleAmountToAddX = Mathf.Clamp(wobbleAmountToAddX, -maxWobble, maxWobble);
-        wobbleAmountToAddZ = Mathf.Clamp(wobbleAmountToAddZ, -maxWobble, maxWobble);
+        Vector3 acceleration = (smoothedVelocity - lastVelocity) / dt;
+        acceleration = Vector3.ClampMagnitude(acceleration, 25f);
 
-        // 3. Sine wave oscillation
-        pulseTime += dt * 2f * Mathf.PI * wobbleFrequency;
-        float sinFactor = Mathf.Sin(pulseTime);
-        wobbleAmountX = wobbleAmountToAddX * sinFactor;
-        wobbleAmountZ = wobbleAmountToAddZ * sinFactor;
+        // 2. Physical inertial tilt target driven by container motion
+        // Forward (+Z) motion causes fluid to slosh backwards (-Z) -> WobbleX tilts negative
+        float targetTiltX = Mathf.Clamp(
+            (-smoothedVelocity.z * 0.22f - acceleration.z * 0.035f) * moveSensitivity +
+            (smoothedAngularVelocity.x * rotateSensitivity * 0.35f),
+            -maxWobble, maxWobble
+        );
 
-        // 4. Exponential decay
-        float decayRate = 4.5f / Mathf.Max(decayDuration, 0.01f);
-        wobbleAmountToAddX = Mathf.Lerp(wobbleAmountToAddX, 0f, dt * decayRate);
-        wobbleAmountToAddZ = Mathf.Lerp(wobbleAmountToAddZ, 0f, dt * decayRate);
+        // Right (+X) motion causes fluid to slosh leftwards (-X) -> WobbleZ tilts positive
+        float targetTiltZ = Mathf.Clamp(
+            (smoothedVelocity.x * 0.22f + acceleration.x * 0.035f) * moveSensitivity -
+            (smoothedAngularVelocity.z * rotateSensitivity * 0.35f),
+            -maxWobble, maxWobble
+        );
 
-        if (Mathf.Abs(wobbleAmountToAddX) < 0.0001f)
+        // 3. Exact Analytical Damped Harmonic Oscillator Integration (100% unconditionally stable)
+        float omegaN = 2f * Mathf.PI * Mathf.Max(wobbleFrequency, 0.1f);
+        float gamma = 4.2f / Mathf.Max(decayDuration, 0.05f);
+
+        UpdateOscillator(targetTiltX, omegaN, gamma, dt, ref wobbleAmountX, ref wobbleVelocityX);
+        UpdateOscillator(targetTiltZ, omegaN, gamma, dt, ref wobbleAmountZ, ref wobbleVelocityZ);
+
+        wobbleAmountX = Mathf.Clamp(wobbleAmountX, -maxWobble, maxWobble);
+        wobbleAmountZ = Mathf.Clamp(wobbleAmountZ, -maxWobble, maxWobble);
+
+        // Rest threshold when motion ceases
+        if (Mathf.Abs(wobbleAmountX) < 0.0002f && Mathf.Abs(wobbleVelocityX) < 0.0005f && Mathf.Abs(targetTiltX) < 0.0002f)
         {
-            wobbleAmountToAddX = 0f;
             wobbleAmountX = 0f;
+            wobbleVelocityX = 0f;
         }
-        if (Mathf.Abs(wobbleAmountToAddZ) < 0.0001f)
+        if (Mathf.Abs(wobbleAmountZ) < 0.0002f && Mathf.Abs(wobbleVelocityZ) < 0.0005f && Mathf.Abs(targetTiltZ) < 0.0002f)
         {
-            wobbleAmountToAddZ = 0f;
             wobbleAmountZ = 0f;
+            wobbleVelocityZ = 0f;
         }
 
-        // 5. Send values to shader
+        // 4. Send updated wobble to shader
         ApplyWobble(wobbleAmountX, wobbleAmountZ);
 
-        lastPos = bottleTransform.position;
+        lastPos = currentPos;
         lastRot = currentRot;
-        lastVelocity = velocity;
-        lastAngularVelocity = angularVelocity;
+        lastVelocity = smoothedVelocity;
+    }
+
+    private void UpdateOscillator(float target, float omegaN, float gamma, float dt, ref float amount, ref float velocity)
+    {
+        float e = amount - target;
+
+        if (omegaN > gamma)
+        {
+            // Underdamped oscillation: exact analytical solution (100% unconditionally stable)
+            float omegaD = Mathf.Sqrt(omegaN * omegaN - gamma * gamma);
+            float decay = Mathf.Exp(-gamma * dt);
+            float cosVal = Mathf.Cos(omegaD * dt);
+            float sinVal = Mathf.Sin(omegaD * dt);
+
+            float newE = decay * (e * cosVal + ((velocity + gamma * e) / omegaD) * sinVal);
+            float newV = decay * (velocity * cosVal - ((omegaN * omegaN * e + gamma * velocity) / omegaD) * sinVal);
+
+            amount = target + newE;
+            velocity = newV;
+        }
+        else
+        {
+            // Critically damped / Overdamped: smooth relaxation
+            float smoothTime = Mathf.Max(1f / gamma, 0.02f);
+            amount = Mathf.SmoothDamp(amount, target, ref velocity, smoothTime, maxWobble * 8f, dt);
+        }
     }
 
     private void ApplyWobble(float wx, float wz)
     {
-        // 1. Material Instance (used in Play Mode & GPU Resident Drawer)
-        if (mat != null)
+        if (liquidRenderer == null) return;
+
+        // 1. In Play Mode: update instantiated material unique to this renderer instance
+        if (Application.isPlaying)
         {
-            mat.SetFloat(WobbleXProp, wx);
-            mat.SetFloat(WobbleZProp, wz);
-            mat.SetFloat(RotXProp, wx);
-            mat.SetFloat(RotZProp, wz);
+            if (mat == null)
+            {
+                mat = liquidRenderer.material;
+            }
+            if (mat != null)
+            {
+                mat.SetFloat(WobbleXProp, wx);
+                mat.SetFloat(WobbleZProp, wz);
+            }
+        }
+        else
+        {
+            // 2. In Edit Mode: update sharedMaterial for instant Scene View preview
+            if (liquidRenderer.sharedMaterial != null)
+            {
+                liquidRenderer.sharedMaterial.SetFloat(WobbleXProp, wx);
+                liquidRenderer.sharedMaterial.SetFloat(WobbleZProp, wz);
+            }
         }
 
-        // 2. Shared Material (used in Edit Mode for instant Scene View preview)
-        if (!Application.isPlaying && liquidRenderer != null && liquidRenderer.sharedMaterial != null)
-        {
-            liquidRenderer.sharedMaterial.SetFloat(WobbleXProp, wx);
-            liquidRenderer.sharedMaterial.SetFloat(WobbleZProp, wz);
-            liquidRenderer.sharedMaterial.SetFloat(RotXProp, wx);
-            liquidRenderer.sharedMaterial.SetFloat(RotZProp, wz);
-        }
-
-        // 3. MaterialPropertyBlock
-        if (liquidRenderer != null)
-        {
-            if (propBlock == null) propBlock = new MaterialPropertyBlock();
-            liquidRenderer.GetPropertyBlock(propBlock);
-            propBlock.SetFloat(WobbleXProp, wx);
-            propBlock.SetFloat(WobbleZProp, wz);
-            propBlock.SetFloat(RotXProp, wx);
-            propBlock.SetFloat(RotZProp, wz);
-            liquidRenderer.SetPropertyBlock(propBlock);
-        }
-
-        // 4. Global Shader variables
-        Shader.SetGlobalFloat(WobbleXProp, wx);
-        Shader.SetGlobalFloat(WobbleZProp, wz);
-        Shader.SetGlobalFloat(RotXProp, wx);
-        Shader.SetGlobalFloat(RotZProp, wz);
+        // 3. MaterialPropertyBlock for GPU instanced / block overrides
+        if (propBlock == null) propBlock = new MaterialPropertyBlock();
+        liquidRenderer.GetPropertyBlock(propBlock);
+        propBlock.SetFloat(WobbleXProp, wx);
+        propBlock.SetFloat(WobbleZProp, wz);
+        liquidRenderer.SetPropertyBlock(propBlock);
     }
 
     [ContextMenu("Test Slosh Wobble")]
     public void TestSlosh()
     {
-        wobbleAmountToAddX = maxWobble * 0.8f;
-        wobbleAmountToAddZ = maxWobble * 0.8f;
+        float omegaN = 2f * Mathf.PI * Mathf.Max(wobbleFrequency, 0.1f);
+        wobbleVelocityX = maxWobble * omegaN * 0.85f;
+        wobbleVelocityZ = maxWobble * omegaN * 0.65f;
+        wobbleAmountX = maxWobble * 0.45f;
+        wobbleAmountZ = maxWobble * 0.35f;
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+        {
+            SimulateWobble(0.016f);
+            EditorApplication.QueuePlayerLoopUpdate();
+            SceneView.RepaintAll();
+        }
+#endif
     }
 }
 
