@@ -13,7 +13,7 @@ This project provides an interactive and physically inspired liquid simulation f
 - **Viscosity & Density Profiles**: Pre-calibrated physical profiles for multiple fluids (Water, Milk, Vegetable Oil, Honey, Ketchup, and Custom).
 - **Shader Graph Fluid Rendering**: Real-time fluid surface level, plane intersection, wobble vectors, and foam/meniscus styling.
 - **Procedural Container Models**: Custom double-walled glass and fluid meshes generated procedurally.
-- **Interactive Controls**: Built-in mouse dragging and keyboard translation for live play-mode testing.
+- **Spectator Camera & In-Game Authority**: Full WASD camera flight and real-time 3D bottle manipulation (drag & drop, 3D Gizmo axis handles, tilt, and slosh testing).
 
 ---
 
@@ -21,7 +21,7 @@ This project provides an interactive and physically inspired liquid simulation f
 
 | Component | Specification |
 |---|---|
-| **Unity Editor** | `6000.6.1f1` (Unity 6) |
+| **Unity Editor** | `6000.6.1f1` (Unity 6 LTS) |
 | **Render Pipeline** | Universal Render Pipeline (URP) `17.6.0` |
 | **Input System** | Unity Input System `1.20.0` |
 | **Target Platform** | PC / Mobile |
@@ -44,9 +44,9 @@ The simulation models different fluid dynamics based on physical density and dyn
 
 ---
 
-## 4. Container Geometries & Prefabs
+## 4. Week 7 Baseline: Container Geometries & Prefabs
 
-The project includes custom-engineered container models separating the outer glass vessel from the inner fluid volume:
+The initial Week 7 foundation established 5 primary container models, separating the outer glass vessel from the inner fluid volume:
 
 | Container | Shape | Default Liquid | Prefab Path |
 |---|---|---|---|
@@ -63,44 +63,57 @@ The project includes custom-engineered container models separating the outer gla
 ```text
 LiquidShaderFirst/
 ├── Assets/
+│   ├── Materials/
+│   │   ├── Week2/                                        # Dedicated Week 8 fluid materials (12 variants)
+│   │   │   ├── Vessel_AlchemicalRetort_VegOil_Fluid.mat
+│   │   │   ├── Vessel_Hourglass_Water_Fluid.mat
+│   │   │   └── ...
+│   │   ├── Honey_Fluid.mat
+│   │   ├── Milk_Fluid.mat
+│   │   ├── Ketchup_Fluid.mat
+│   │   ├── VegOil_Fluid.mat
+│   │   ├── Water_Fluid.mat
+│   │   └── glass.mat
 │   ├── Models/
-│   │   ├── Bottle_Hexagonal.obj
-│   │   ├── Bottle_Hexagonal_Fluid.obj
-│   │   ├── Bottle_Hexagonal_Glass.obj
-│   │   ├── Bottle_Square.obj
-│   │   ├── Flask_Conical.obj
-│   │   ├── Flask_Spherical.obj
-│   │   └── Jar_Cylinder.obj
+│   │   ├── Vessel_*_Glass.obj                            # Week 8 arbitrary geometry glass enclosures (12)
+│   │   ├── Vessel_*_Fluid.obj                            # Week 8 arbitrary geometry fluid volumes (12)
+│   │   ├── Bottle_Hexagonal_Glass.obj                    # Week 7 baseline models
+│   │   ├── Bottle_Square_Glass.obj
+│   │   ├── Flask_Conical_Glass.obj
+│   │   ├── Flask_Spherical_Glass.obj
+│   │   └── Jar_Cylinder_Glass.obj
 │   ├── Prefabs/
-│   │   ├── Bottle_Hexagonal_Water.prefab
+│   │   ├── Week2/                                        # Week 8 arbitrary geometry vessel prefabs (12)
+│   │   │   ├── Vessel_Hourglass_Water.prefab
+│   │   │   ├── Vessel_ToroidRing_VegOil.prefab
+│   │   │   └── ...
+│   │   ├── Bottle_Hexagonal_Water.prefab                 # Week 7 baseline prefabs (5)
 │   │   ├── Bottle_Square_VegOil.prefab
 │   │   ├── Flask_Conical_Milk.prefab
 │   │   ├── Flask_Spherical_Honey.prefab
 │   │   └── Jar_Cylinder_Ketchup.prefab
 │   ├── Scenes/
-│   │   └── SampleScene.unity
+│   │   └── SampleScene.unity                             # Dual-tier showcase scene (Week 8 front, Week 7 back)
 │   ├── Settings/
 │   │   ├── PC_RPAsset.asset
 │   │   ├── Mobile_RPAsset.asset
 │   │   └── UniversalRenderPipelineGlobalSettings.asset
-│   ├── LiquidShaderGrapjh.shadergraph
-│   ├── LiquidWobble.cs
-│   ├── ViscousLiquidWobble.cs
-│   ├── Honey_Fluid.mat
-│   ├── Milk_Fluid.mat
-│   ├── Ketchup_Fluid.mat
-│   ├── VegOil_Fluid.mat
-│   ├── Water_Fluid.mat
-│   ├── glass.mat
-│   └── generate_models_v2.py
+│   ├── TutorialInfo/
+│   │   └── Editor/
+│   │       ├── SetupArbitraryGeometryShowcase.cs         # Automated Week 8 showcase assembler
+│   │       └── SetupFluidContainers.cs                   # Automated Week 7 showcase assembler
+│   ├── ArbitraryViscousFluidFriction.cs                  # Week 8 physics: Navier-Stokes boundary friction
+│   ├── LiquidShaderGrapjh.shadergraph                    # Core URP fluid shader graph
+│   ├── LiquidWobble.cs                                   # Baseline wobble shader controller
+│   ├── ShowcaseCameraController.cs                       # Camera spectator & in-game bottle authority
+│   ├── ViscousLiquidWobble.cs                            # Week 7 viscous fluid dynamics controller
+│   ├── generate_models_v2.py                             # Procedural generator for Week 7 models
+│   └── generate_week2_models.py                          # Procedural generator for Week 8 arbitrary models
 ├── Packages/
 │   ├── manifest.json
 │   └── packages-lock.json
 ├── ProjectSettings/
-│   ├── ProjectVersion.txt
-│   ├── TagManager.asset
-│   ├── QualitySettings.asset
-│   └── ...
+│   └── ProjectVersion.txt
 ├── .gitignore
 ├── .vsconfig
 └── README.md
@@ -116,16 +129,14 @@ A custom URP Shader Graph that handles:
 - **Wobble Angle & Matrix**: Rotates the fluid plane according to sine wave displacement vectors passed from C#.
 - **Subsurface & Translucency**: Distinct opacity and refraction properties for realistic fluid visuals.
 
-### 6.2 `ViscousLiquidWobble.cs` & `LiquidWobble.cs`
-C# MonoBehaviour scripts executing both in Editor (`[ExecuteAlways]`) and Play Mode:
-- **Velocity & Angular Velocity Tracking**: Derives acceleration from frame-to-frame transform deltas.
-- **Viscous Damping Sine Wave**: Calculates wobble displacement with frequency and decay scaled by viscosity.
-- **Material Property Block / Instance Updates**: Feeds `_WobbleX` and `_WobbleZ` into the shader.
-- **Interactive Controls**: Supports mouse dragging and WASD/arrow key interaction during runtime testing.
+### 6.2 C# Simulation Controllers
+- **`ArbitraryViscousFluidFriction.cs` (Week 8)**: Simulates coupled fluid density, dynamic viscosity, wall friction coefficients, and geometric tortuosity boundary shear across 12 arbitrary vessel geometries.
+- **`ViscousLiquidWobble.cs` (Week 7)**: Simulates physical viscous decay, oscillation frequency scaling, and velocity dampening across 5 baseline containers.
+- **`ShowcaseCameraController.cs`**: Manages spectator camera navigation (WASD + free look) and provides complete in-game bottle authority (direct mouse drag, 3D Gizmo axis handles, tilt, and fluid switching).
 
 ---
 
-## 7. Getting Started
+## 7. Getting Started & Controls Quickstart
 
 ### Prerequisites
 - **Unity 6000.6.1f1** (Unity 6 LTS)
@@ -144,15 +155,15 @@ C# MonoBehaviour scripts executing both in Editor (`[ExecuteAlways]`) and Play M
    ```text
    Assets/Scenes/SampleScene.unity
    ```
-7. Press **Play** to interact with the containers using mouse click-and-drag or keyboard controls.
+7. Press **Play** to explore the showcase and interact with the containers.
 
 ---
 
-## 10. Week 2 Extension: Arbitrary Geometry Liquid Simulation & Surface Friction
+## 8. Week 8 Extension: Arbitrary Geometry Liquid Simulation & Surface Friction
 
-In this update, the liquid shader simulation framework has been expanded with **12 newly engineered arbitrary geometry enclosed vessels**, placed in a **separate dedicated showcase line**, featuring coupled fluid **density ($\rho$)**, **dynamic viscosity ($\mu$)**, and **container interior surface friction ($f_{\text{surface}}$ & $\lambda_{\text{geom}}$)** without altering or modifying the original week-1 setup.
+In the Week 8 update, the liquid shader simulation framework has been expanded with **12 newly engineered arbitrary geometry enclosed vessels**, placed in a **dedicated front showcase line**, featuring coupled fluid **density ($\rho$)**, **dynamic viscosity ($\mu$)**, and **container interior surface friction ($f_{\text{surface}}$ & $\lambda_{\text{geom}}$)** without altering or modifying the original Week 7 setup.
 
-### 10.1 The 12 Newly Designed Arbitrary Geometry Enclosed Vessels
+### 8.1 The 12 Newly Designed Arbitrary Geometry Enclosed Vessels
 
 | Vessel Name | Arbitrary Geometry Description | Default Fluid | Surface Friction Type | Geometry Tortuosity ($\lambda_{\text{geom}}$) | Prefab Path |
 |---|---|---|---|---|---|
@@ -169,14 +180,15 @@ In this update, the liquid shader simulation framework has been expanded with **
 | **Vessel_DiamondGem_Honey** | Octahedral bipyramidal faceted gemstone enclosure | Honey | Polished Glass ($f = 0.15$) | $1.75$ (Multi-faceted boundary drag) | `Assets/Prefabs/Week2/Vessel_DiamondGem_Honey.prefab` |
 | **Vessel_EllipticalCanteen_Ketchup** | Flattened elliptical canteen with side corrugated ribs | Ketchup | Standard Glass ($f = 0.35$) | $2.05$ (Corrugated horizontal wall drag) | `Assets/Prefabs/Week2/Vessel_EllipticalCanteen_Ketchup.prefab` |
 
-### 10.2 Fluid Rheology & Surface Boundary Friction Mechanics
+### 8.2 Fluid Rheology & Surface Boundary Friction Mechanics
 
-The new controller `ArbitraryViscousFluidFriction.cs` models physical fluid dynamics using coupled Navier-Stokes boundary equations:
+The controller [`ArbitraryViscousFluidFriction.cs`](file:///d:/IP%20unity/LiquidShaderFirst/Assets/ArbitraryViscousFluidFriction.cs) models physical fluid dynamics using coupled Navier-Stokes boundary equations:
 
 1. **Fluid Density ($\rho$) & Inertial Momentum**:
    - Denser fluids (e.g. Honey: $1420\ \text{kg/m}^3$) carry higher momentum mass ($M = \rho \cdot V$) under acceleration, resisting initial tilt displacement but generating sustained momentum force.
 2. **Dynamic Viscosity ($\mu$) & Kinematic Viscosity ($\nu = \mu / \rho$)**:
-   - Governs internal fluid shear stress $\tau = \mu \frac{\partial u}{\partial y}$.
+   - Governs internal fluid shear stress:
+     $$\tau = \mu \frac{\partial u}{\partial y}$$
    - Water ($\mu = 0.001\ \text{Pa}\cdot\text{s}$): underdamped sloshing ($\zeta \approx 0.05$), fast wave oscillation.
    - Vegetable Oil ($\mu = 0.050\ \text{Pa}\cdot\text{s}$): smooth laminar flow, moderate damping.
    - Honey ($\mu = 10.0\ \text{Pa}\cdot\text{s}$): near-critical damping, delayed sluggish displacement.
@@ -190,25 +202,25 @@ The new controller `ArbitraryViscousFluidFriction.cs` models physical fluid dyna
 5. **Meniscus Wall Adhesion Cling**:
    - Simulates sticky liquid clinging to arbitrary geometry walls before gravity draws it back down.
 
-### 10.3 Camera Flight Navigation & In-Game Bottle Authority
+### 8.3 Camera Flight Navigation & In-Game Bottle Authority
 
-`ShowcaseCameraController.cs` provides complete spectator navigation and in-game vessel manipulation authority:
+[`ShowcaseCameraController.cs`](file:///d:/IP%20unity/LiquidShaderFirst/Assets/ShowcaseCameraController.cs) provides complete spectator navigation and in-game vessel manipulation authority:
 
 #### Camera Controls (Player Movement)
-- **`[W]`, `[A]`, `[S]`, `[D]`**: Fly the camera freely (Forward, Left Strafe, Backward, Right Strafe). Moving with WASD no longer causes bottles to slide away!
+- **`[W]`, `[A]`, `[S]`, `[D]`**: Fly the camera freely (Forward, Left Strafe, Backward, Right Strafe). Moving with WASD navigates the player view without affecting bottle positions.
 - **`[Right Mouse Button (Hold)]`**: Free-look camera (smooth pitch and yaw, cursor auto-locks during look).
 - **`[Left Shift]`**: Sprint / Boost camera movement speed.
 - **`[Space]` / `[E]`**: Fly upwards vertically.
 - **`[Left Ctrl]` / `[C]` / `[Q]`**: Fly downwards vertically.
-- **`[F1]`**: Tiered Overview (frames both front and back showcase lines).
-- **`[F2]`**: Front Line focus (12 new arbitrary vessels).
-- **`[F3]`**: Back Line focus (5 original containers).
+- **`[F1]`**: Tiered Overview (frames both Week 8 front line and Week 7 back line).
+- **`[F2]`**: Front Line focus (12 Week 8 arbitrary vessels).
+- **`[F3]`**: Back Line focus (5 Week 7 baseline containers).
 - **`[F4]`**: Focus camera tightly on the active selected vessel.
 - **`[F5]`**: Switch to Free-Fly Spectator Camera.
 - **`[H]`**: Toggle On-Screen Telemetry HUD.
 
 #### In-Game Bottle Authority (Manipulate Bottles in Play Mode)
-- **Left-Click & Drag**: Click directly on ANY bottle or vessel in the scene to pick it up and move/shake it in real-time. Dynamic fluid sloshes realistically with wall friction and viscosity!
+- **Left-Click & Drag**: Click directly on **any** bottle or vessel in the scene to pick it up and move/shake it in real-time. Dynamic fluid sloshes realistically with wall friction and viscosity!
 - **Mouse Scroll Wheel**: Push or pull the dragged bottle closer or further in depth ($Z$-axis distance).
 - **3D Move Gizmo**: Selecting any bottle spawns an interactive in-game 3D Move Tool:
   - **Red [X] Handle**: Drag to translate strictly along the world $X$-axis.
@@ -223,7 +235,7 @@ The new controller `ArbitraryViscousFluidFriction.cs` models physical fluid dyna
 
 ---
 
-## 11. Version Control & Contribution Rules
+## 9. Version Control & Contribution Rules
 
 - Generated Unity folders (`Library/`, `Temp/`, `Obj/`, `Logs/`, `UserSettings/`) are excluded via `.gitignore`.
 - All Unity `.meta` files are tracked to ensure asset GUID integrity.
@@ -231,7 +243,7 @@ The new controller `ArbitraryViscousFluidFriction.cs` models physical fluid dyna
 
 ---
 
-## 12. Author & Academic Context
+## 10. Author & Academic Context
 
 **Harsh**  
 Indraprastha Institute of Information Technology Delhi (IIIT-Delhi)  
