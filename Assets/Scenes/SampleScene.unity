@@ -2410,11 +2410,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LiquidWobble
   bottleTransform: {fileID: 1518469461}
   liquidRenderer: {fileID: 1861061744}
-  maxWobble: 0.124
-  wobbleFrequency: 1.82
-  decayDuration: 4.79
-  moveSensitivity: 0.5
-  rotateSensitivity: 0.5
+  maxWobble: 0.35
+  wobbleFrequency: 2.2
+  decayDuration: 2.5
+  moveSensitivity: 1.5
+  rotateSensitivity: 1.5
   enableKeyboardControls: 0
   enableMouseDrag: 1
   moveSpeed: 3

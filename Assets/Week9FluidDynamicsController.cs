@@ -109,6 +109,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
     private Vector3 currentVelocity;
     private Vector3 currentAngularVelocity;
     private Vector3 previousVelocity;
+    private Vector3 previousAngularVelocity;
 
     // 2-axis oscillator states (X and Z sloshing)
     private float wobbleX = 0f;
@@ -309,6 +310,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
         lastPosition = currentPos;
         lastRotation = currentRot;
         previousVelocity = currentVelocity;
+        previousAngularVelocity = currentAngularVelocity;
     }
 
     private void HandleInteractiveFillInput(float dt)
@@ -369,15 +371,27 @@ public class Week9FluidDynamicsController : MonoBehaviour
         // a_fluid = F / (1 + (rho / rho_ref) * 0.2)
         float densityInertiaFactor = Mathf.Clamp(Mathf.Pow(1000f / Mathf.Max(100f, densityKgM3), 0.35f), 0.35f, 1.8f);
 
-        // Transform acceleration to container local space
-        Vector3 localAcc = transform.InverseTransformDirection(acceleration);
-        Vector3 localAngVel = transform.InverseTransformDirection(angularVel);
+        // Angular acceleration for impulse response on rotation start/stop
+        Vector3 angularAcc = (angularVel - previousAngularVelocity) / Mathf.Max(dt, 0.0001f);
+        angularAcc = Vector3.ClampMagnitude(angularAcc, 40f);
 
-        // Excitation forces scaled by Fill Amount Magnitude Envelope Psi(F)
-        float forceX = (-localAcc.x * translationSensitivity - localAngVel.z * rotationSensitivity) 
+        // Excitation forces in WORLD SPACE (shader cut plane operates strictly in world space):
+        // Translation: -acceleration pushes fluid opposite to container travel
+        // Rotation: angular velocity around World Z tilts along World X; angular velocity around World X tilts along World Z
+        float forceX = (-acceleration.x * translationSensitivity - angularVel.z * rotationSensitivity - angularAcc.z * rotationSensitivity * 0.1f) 
                        * currentFillMagnitudeEnvelope * densityInertiaFactor;
-        float forceZ = (-localAcc.z * translationSensitivity + localAngVel.x * rotationSensitivity) 
+        float forceZ = (-acceleration.z * translationSensitivity + angularVel.x * rotationSensitivity + angularAcc.x * rotationSensitivity * 0.1f) 
                        * currentFillMagnitudeEnvelope * densityInertiaFactor;
+
+        // Yaw spin (World Y) creates vortex precession sloshing
+        float yawSpeed = Mathf.Abs(angularVel.y);
+        if (yawSpeed > 0.1f)
+        {
+            float swirl = yawSpeed * 0.25f * rotationSensitivity * currentFillMagnitudeEnvelope * densityInertiaFactor;
+            float swirlPhase = Time.time * currentResonantFrequency * 2f * Mathf.PI;
+            forceX += Mathf.Sin(swirlPhase) * swirl;
+            forceZ += Mathf.Cos(swirlPhase) * swirl;
+        }
 
         // E. 2-Axis Spring-Mass-Damper Differential Integration
         // d2w/dt2 + 2*gamma*dw/dt + omega^2 * w = force
@@ -467,6 +481,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
         lastPosition = currentPos;
         lastRotation = currentRot;
         previousVelocity = currentVelocity;
+        previousAngularVelocity = currentAngularVelocity;
 
         bool hasWobble = Mathf.Abs(wobbleX) > 0.0002f || Mathf.Abs(wobbleVelocityX) > 0.0005f ||
                          Mathf.Abs(wobbleZ) > 0.0002f || Mathf.Abs(wobbleVelocityZ) > 0.0005f;

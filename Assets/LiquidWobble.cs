@@ -54,10 +54,11 @@ public class LiquidWobble : MonoBehaviour
     private static readonly int WobbleZProp = Shader.PropertyToID("_WobbleZ");
 
     private Vector3 lastPos;
-    private Vector3 lastRot;
+    private Quaternion lastRot;
     private Vector3 smoothedVelocity;
     private Vector3 smoothedAngularVelocity;
     private Vector3 lastVelocity;
+    private Vector3 lastAngularVelocity;
 
     private float wobbleAmountX = 0f;
     private float wobbleAmountZ = 0f;
@@ -115,17 +116,18 @@ public class LiquidWobble : MonoBehaviour
         if (bottleTransform != null)
         {
             lastPos = bottleTransform.position;
-            lastRot = bottleTransform.eulerAngles;
+            lastRot = bottleTransform.rotation;
         }
         else
         {
             lastPos = transform.position;
-            lastRot = transform.eulerAngles;
+            lastRot = transform.rotation;
         }
 
         smoothedVelocity = Vector3.zero;
         smoothedAngularVelocity = Vector3.zero;
         lastVelocity = Vector3.zero;
+        lastAngularVelocity = Vector3.zero;
         wobbleAmountX = 0f;
         wobbleAmountZ = 0f;
         wobbleVelocityX = 0f;
@@ -242,7 +244,7 @@ public class LiquidWobble : MonoBehaviour
 
             bool hadWobble = Mathf.Abs(wobbleAmountX) > 0.0002f || Mathf.Abs(wobbleVelocityX) > 0.0005f ||
                              Mathf.Abs(wobbleAmountZ) > 0.0002f || Mathf.Abs(wobbleVelocityZ) > 0.0005f;
-            bool moved = bottleTransform != null && (bottleTransform.position != lastPos || bottleTransform.eulerAngles != lastRot);
+            bool moved = bottleTransform != null && (bottleTransform.position != lastPos || Quaternion.Angle(bottleTransform.rotation, lastRot) > 0.01f);
 
             SimulateWobble(dt);
 
@@ -294,12 +296,39 @@ public class LiquidWobble : MonoBehaviour
             {
                 bottleTransform.Rotate(Vector3.forward, -90f * Time.deltaTime, Space.World);
             }
+            if (keyboard.zKey.isPressed)
+            {
+                bottleTransform.Rotate(Vector3.right, 90f * Time.deltaTime, Space.World);
+            }
+            if (keyboard.cKey.isPressed)
+            {
+                bottleTransform.Rotate(Vector3.right, -90f * Time.deltaTime, Space.World);
+            }
+            if (keyboard.rKey.isPressed)
+            {
+                bottleTransform.Rotate(Vector3.up, 90f * Time.deltaTime, Space.World);
+            }
+            if (keyboard.tKey.isPressed)
+            {
+                bottleTransform.Rotate(Vector3.up, -90f * Time.deltaTime, Space.World);
+            }
         }
 
         Mouse mouse = Mouse.current;
         if (enableMouseDrag && mouse != null && Camera.main != null)
         {
             Ray ray = Camera.main.ScreenPointToRay(mouse.position.ReadValue());
+
+            // Right-click drag rotates the bottle in 3D
+            if (mouse.rightButton.isPressed)
+            {
+                Vector2 mouseDelta = mouse.delta.ReadValue();
+                if (mouseDelta.sqrMagnitude > 0.001f)
+                {
+                    bottleTransform.Rotate(Camera.main.transform.up, -mouseDelta.x * 0.35f, Space.World);
+                    bottleTransform.Rotate(Camera.main.transform.right, mouseDelta.y * 0.35f, Space.World);
+                }
+            }
 
             if (mouse.leftButton.wasPressedThisFrame)
             {
@@ -350,14 +379,17 @@ public class LiquidWobble : MonoBehaviour
 
         // 1. Measure motion with exponential smoothing to suppress single-frame spikes
         Vector3 currentPos = bottleTransform.position;
-        Vector3 currentRot = bottleTransform.eulerAngles;
+        Quaternion currentRot = bottleTransform.rotation;
 
         Vector3 rawVelocity = (currentPos - lastPos) / dt;
-        Vector3 rawAngularVelocity = new Vector3(
-            Mathf.DeltaAngle(lastRot.x, currentRot.x),
-            Mathf.DeltaAngle(lastRot.y, currentRot.y),
-            Mathf.DeltaAngle(lastRot.z, currentRot.z)
-        ) * Mathf.Deg2Rad / dt;
+
+        // True 3D World Angular Velocity without Euler gimbal lock
+        Quaternion deltaRot = currentRot * Quaternion.Inverse(lastRot);
+        deltaRot.ToAngleAxis(out float angleDeg, out Vector3 axis);
+        if (angleDeg > 180f) angleDeg -= 360f;
+        Vector3 rawAngularVelocity = (Mathf.Abs(angleDeg) > 0.001f && dt > 0.0001f)
+            ? (axis * (angleDeg * Mathf.Deg2Rad / dt))
+            : Vector3.zero;
 
         float filterWeight = Mathf.Clamp01(dt * 20f);
         smoothedVelocity = Vector3.Lerp(smoothedVelocity, rawVelocity, filterWeight);
@@ -366,20 +398,33 @@ public class LiquidWobble : MonoBehaviour
         Vector3 acceleration = (smoothedVelocity - lastVelocity) / dt;
         acceleration = Vector3.ClampMagnitude(acceleration, 25f);
 
-        // 2. Physical inertial tilt target driven by container motion
-        // Forward (+Z) motion causes fluid to slosh backwards (-Z) -> WobbleX tilts negative
+        Vector3 angularAcceleration = (smoothedAngularVelocity - lastAngularVelocity) / dt;
+        angularAcceleration = Vector3.ClampMagnitude(angularAcceleration, 40f);
+
+        // 2. Physical inertial tilt target driven by container motion in WORLD SPACE
+        // Pitch (+X) rotation surges fluid backward -> WobbleX tilts positive
         float targetTiltX = Mathf.Clamp(
             (-smoothedVelocity.z * 0.22f - acceleration.z * 0.035f) * moveSensitivity +
-            (smoothedAngularVelocity.x * rotateSensitivity * 0.35f),
+            (smoothedAngularVelocity.x * 0.85f + angularAcceleration.x * 0.09f) * rotateSensitivity,
             -maxWobble, maxWobble
         );
 
-        // Right (+X) motion causes fluid to slosh leftwards (-X) -> WobbleZ tilts positive
+        // Roll (+Z) rotation surges fluid leftward -> WobbleZ tilts negative
         float targetTiltZ = Mathf.Clamp(
             (smoothedVelocity.x * 0.22f + acceleration.x * 0.035f) * moveSensitivity -
-            (smoothedAngularVelocity.z * rotateSensitivity * 0.35f),
+            (smoothedAngularVelocity.z * 0.85f + angularAcceleration.z * 0.09f) * rotateSensitivity,
             -maxWobble, maxWobble
         );
+
+        // Yaw (Y) spin creates centrifugal swirling waves
+        float yawMag = Mathf.Abs(smoothedAngularVelocity.y);
+        if (yawMag > 0.1f)
+        {
+            float swirlWave = Mathf.Clamp(yawMag * 0.15f * rotateSensitivity, 0f, maxWobble * 0.6f);
+            float swirlPhase = Time.time * wobbleFrequency * 2f * Mathf.PI;
+            targetTiltX = Mathf.Clamp(targetTiltX + Mathf.Sin(swirlPhase) * swirlWave, -maxWobble, maxWobble);
+            targetTiltZ = Mathf.Clamp(targetTiltZ + Mathf.Cos(swirlPhase) * swirlWave, -maxWobble, maxWobble);
+        }
 
         // 3. Exact Analytical Damped Harmonic Oscillator Integration (100% unconditionally stable)
         float omegaN = 2f * Mathf.PI * Mathf.Max(wobbleFrequency, 0.1f);
@@ -409,6 +454,7 @@ public class LiquidWobble : MonoBehaviour
         lastPos = currentPos;
         lastRot = currentRot;
         lastVelocity = smoothedVelocity;
+        lastAngularVelocity = smoothedAngularVelocity;
     }
 
     private void UpdateOscillator(float target, float omegaN, float gamma, float dt, ref float amount, ref float velocity)

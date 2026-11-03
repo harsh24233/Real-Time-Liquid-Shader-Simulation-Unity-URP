@@ -163,10 +163,11 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
     private static readonly int WobbleZProp = Shader.PropertyToID("_WobbleZ");
 
     private Vector3 lastPos;
-    private Vector3 lastRot;
+    private Quaternion lastRot;
     private Vector3 smoothedVelocity;
     private Vector3 smoothedAngularVelocity;
     private Vector3 lastVelocity;
+    private Vector3 lastAngularVelocity;
 
     private float wobbleAmountX = 0f;
     private float wobbleAmountZ = 0f;
@@ -415,11 +416,12 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
         if (containerTransform != null)
         {
             lastPos = containerTransform.position;
-            lastRot = containerTransform.eulerAngles;
+            lastRot = containerTransform.rotation;
         }
         smoothedVelocity = Vector3.zero;
         smoothedAngularVelocity = Vector3.zero;
         lastVelocity = Vector3.zero;
+        lastAngularVelocity = Vector3.zero;
         wobbleAmountX = 0f;
         wobbleAmountZ = 0f;
         wobbleVelocityX = 0f;
@@ -502,7 +504,7 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
         if (containerTransform != null)
         {
             lastPos = containerTransform.position;
-            lastRot = containerTransform.eulerAngles;
+            lastRot = containerTransform.rotation;
         }
     }
 
@@ -526,7 +528,7 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
 
             bool hadWobble = Mathf.Abs(wobbleAmountX) > 0.0002f || Mathf.Abs(wobbleVelocityX) > 0.0005f ||
                              Mathf.Abs(wobbleAmountZ) > 0.0002f || Mathf.Abs(wobbleVelocityZ) > 0.0005f;
-            bool moved = containerTransform != null && (containerTransform.position != lastPos || containerTransform.eulerAngles != lastRot);
+            bool moved = containerTransform != null && (containerTransform.position != lastPos || Quaternion.Angle(containerTransform.rotation, lastRot) > 0.01f);
 
             SimulateFluidMotion(dt);
 
@@ -645,14 +647,17 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
 
         // 1. Calculate linear and angular kinematics safely with exponential smoothing
         Vector3 currentPos = containerTransform.position;
-        Vector3 currentRot = containerTransform.eulerAngles;
+        Quaternion currentRot = containerTransform.rotation;
 
         Vector3 rawVelocity = (currentPos - lastPos) / dt;
-        Vector3 rawAngularVelocity = new Vector3(
-            Mathf.DeltaAngle(lastRot.x, currentRot.x),
-            Mathf.DeltaAngle(lastRot.y, currentRot.y),
-            Mathf.DeltaAngle(lastRot.z, currentRot.z)
-        ) * Mathf.Deg2Rad / dt;
+
+        // True 3D World Angular Velocity without Euler gimbal lock
+        Quaternion deltaRot = currentRot * Quaternion.Inverse(lastRot);
+        deltaRot.ToAngleAxis(out float angleDeg, out Vector3 axis);
+        if (angleDeg > 180f) angleDeg -= 360f;
+        Vector3 rawAngularVelocity = (Mathf.Abs(angleDeg) > 0.001f && dt > 0.0001f)
+            ? (axis * (angleDeg * Mathf.Deg2Rad / dt))
+            : Vector3.zero;
 
         float filterWeight = Mathf.Clamp01(dt * 20f);
         smoothedVelocity = Vector3.Lerp(smoothedVelocity, rawVelocity, filterWeight);
@@ -661,21 +666,36 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
         Vector3 acceleration = (smoothedVelocity - lastVelocity) / dt;
         acceleration = Vector3.ClampMagnitude(acceleration, 25f);
 
-        // 2. Physical inertial slosh target:
+        Vector3 angularAcceleration = (smoothedAngularVelocity - lastAngularVelocity) / dt;
+        angularAcceleration = Vector3.ClampMagnitude(angularAcceleration, 40f);
+
+        // 2. Physical inertial slosh target in WORLD SPACE:
         // Fluid inertia scales with Density (rho). Denser fluids carry higher mass momentum under acceleration.
         float densityMomentumFactor = Mathf.Clamp(fluidDensity / 1000f, 0.7f, 1.4f);
 
+        // Pitch (+X) rotation surges fluid backward -> WobbleX tilts positive
         float targetTiltX = Mathf.Clamp(
             (-smoothedVelocity.z * 0.22f - acceleration.z * 0.035f) * moveSensitivity * densityMomentumFactor +
-            (smoothedAngularVelocity.x * rotateSensitivity * 0.35f),
+            (smoothedAngularVelocity.x * 0.85f + angularAcceleration.x * 0.09f) * rotateSensitivity,
             -maxWobble, maxWobble
         );
 
+        // Roll (+Z) rotation surges fluid leftward -> WobbleZ tilts negative
         float targetTiltZ = Mathf.Clamp(
             (smoothedVelocity.x * 0.22f + acceleration.x * 0.035f) * moveSensitivity * densityMomentumFactor -
-            (smoothedAngularVelocity.z * rotateSensitivity * 0.35f),
+            (smoothedAngularVelocity.z * 0.85f + angularAcceleration.z * 0.09f) * rotateSensitivity,
             -maxWobble, maxWobble
         );
+
+        // Yaw (Y) spin creates centrifugal swirling waves
+        float yawMag = Mathf.Abs(smoothedAngularVelocity.y);
+        if (yawMag > 0.1f)
+        {
+            float swirlWave = Mathf.Clamp(yawMag * 0.15f * rotateSensitivity, 0f, maxWobble * 0.6f);
+            float swirlPhase = Time.time * currentFrequency * 2f * Mathf.PI;
+            targetTiltX = Mathf.Clamp(targetTiltX + Mathf.Sin(swirlPhase) * swirlWave, -maxWobble, maxWobble);
+            targetTiltZ = Mathf.Clamp(targetTiltZ + Mathf.Cos(swirlPhase) * swirlWave, -maxWobble, maxWobble);
+        }
 
         // 3. Physical Coupling of Surface Friction & Arbitrary Geometry Tortuosity:
         float omegaN = 2f * Mathf.PI * Mathf.Max(currentFrequency, 0.1f);
@@ -736,6 +756,7 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
         lastPos = currentPos;
         lastRot = currentRot;
         lastVelocity = smoothedVelocity;
+        lastAngularVelocity = smoothedAngularVelocity;
     }
 
     private void UpdateOscillator(float target, float omegaN, float gamma, float dt, ref float amount, ref float velocity)
