@@ -126,9 +126,9 @@ public class Week9FluidDynamicsController : MonoBehaviour
     [Tooltip("Enables delayed Bingham-plastic yield and creeping gravitational slump when rotated.")]
     [SerializeField] private bool enableViscousCreepSlump = true;
     [Tooltip("Yield delay in seconds before heavy gel breaks wall cling and begins to slump under gravity.")]
-    [SerializeField] private float gelYieldDelay = 0.55f;
+    [SerializeField] private float gelYieldDelay = 0.85f;
     [Tooltip("Relaxation duration in seconds for heavy gel to creep and fall to horizontal level.")]
-    [SerializeField] private float gelSlumpDuration = 2.4f;
+    [SerializeField] private float gelSlumpDuration = 4.8f;
 
     // Gel surface normal in world space (starts at Vector3.up)
     private Vector3 gelSurfaceNormal = Vector3.up;
@@ -166,10 +166,10 @@ public class Week9FluidDynamicsController : MonoBehaviour
         new Week9PhysicalFluidProfile("Cryogenic Liquid Gas", 500f, 0.0001f, 2.10f, 1.2f, 26f, 22.0f, 0.95f);
 
     public static readonly Week9PhysicalFluidProfile ProfileTreeSap =
-        new Week9PhysicalFluidProfile("Tree Sap Resin", 1380f, 8.5000f, 0.90f, 9.5f, 9f, 4.0f, 0.65f);
+        new Week9PhysicalFluidProfile("Tree Sap Resin", 1380f, 8.5000f, 0.55f, 14.0f, 6f, 2.0f, 0.40f);
 
     public static readonly Week9PhysicalFluidProfile ProfileHeavyGel =
-        new Week9PhysicalFluidProfile("Heavy Maze Gel", 1420f, 25.0000f, 0.75f, 13.5f, 7f, 2.5f, 0.50f);
+        new Week9PhysicalFluidProfile("Heavy Maze Gel", 1420f, 25.0000f, 0.40f, 22.0f, 4f, 1.2f, 0.30f);
 
     private void Awake()
     {
@@ -422,55 +422,91 @@ public class Week9FluidDynamicsController : MonoBehaviour
         // D. Inertial Mass Acceleration Coupling:
         // Denser fluids (e.g. Mercury rho = 13550) carry immense momentum:
         // Responsiveness scales inversely with density relative to reference water (rho_ref = 1000):
-        // a_fluid = F / (1 + (rho / rho_ref) * 0.2)
         float densityInertiaFactor = Mathf.Clamp(Mathf.Pow(1000f / Mathf.Max(100f, densityKgM3), 0.35f), 0.35f, 1.8f);
+
+        // Viscous resistance factor suppresses sudden inertial displacements for thick fluids (Tree Sap & Heavy Gel)
+        float viscousInertiaSuppression = 1f / (1f + dynamicViscosityPaS * 0.40f);
 
         // Angular acceleration for impulse response on rotation start/stop
         Vector3 angularAcc = (angularVel - previousAngularVelocity) / Mathf.Max(dt, 0.0001f);
         angularAcc = Vector3.ClampMagnitude(angularAcc, 40f);
 
-        // Excitation forces in WORLD SPACE (shader cut plane operates strictly in world space):
-        // Translation: -acceleration pushes fluid opposite to container travel
-        // Rotation: angular velocity around World Z tilts along World X; angular velocity around World X tilts along World Z
-        float forceX = (-acceleration.x * translationSensitivity - angularVel.z * rotationSensitivity - angularAcc.z * rotationSensitivity * 0.1f) 
-                       * currentFillMagnitudeEnvelope * densityInertiaFactor;
-        float forceZ = (-acceleration.z * translationSensitivity + angularVel.x * rotationSensitivity + angularAcc.x * rotationSensitivity * 0.1f) 
-                       * currentFillMagnitudeEnvelope * densityInertiaFactor;
+        float activeMaxLimit = maxWobbleDisplacement * Mathf.Max(0.12f, currentFillMagnitudeEnvelope);
+
+        // Excitation target tilt in radians/normalized angle
+        float targetTiltX = Mathf.Clamp(
+            (-currentVelocity.z * 0.18f - acceleration.z * 0.025f) * translationSensitivity * densityInertiaFactor +
+            (angularVel.x * 0.55f + angularAcc.x * 0.05f) * rotationSensitivity,
+            -activeMaxLimit, activeMaxLimit
+        ) * currentFillMagnitudeEnvelope * viscousInertiaSuppression;
+
+        float targetTiltZ = Mathf.Clamp(
+            (currentVelocity.x * 0.18f + acceleration.x * 0.025f) * translationSensitivity * densityInertiaFactor -
+            (angularVel.z * 0.55f + angularAcc.z * 0.05f) * rotationSensitivity,
+            -activeMaxLimit, activeMaxLimit
+        ) * currentFillMagnitudeEnvelope * viscousInertiaSuppression;
 
         // Yaw spin (World Y) creates vortex precession sloshing
         float yawSpeed = Mathf.Abs(angularVel.y);
         if (yawSpeed > 0.1f)
         {
-            float swirl = yawSpeed * 0.25f * rotationSensitivity * currentFillMagnitudeEnvelope * densityInertiaFactor;
+            float swirl = Mathf.Clamp(yawSpeed * 0.15f * rotationSensitivity * currentFillMagnitudeEnvelope * densityInertiaFactor * viscousInertiaSuppression, 0f, activeMaxLimit * 0.4f);
             float swirlPhase = Time.time * currentResonantFrequency * 2f * Mathf.PI;
-            forceX += Mathf.Sin(swirlPhase) * swirl;
-            forceZ += Mathf.Cos(swirlPhase) * swirl;
+            targetTiltX = Mathf.Clamp(targetTiltX + Mathf.Sin(swirlPhase) * swirl, -activeMaxLimit, activeMaxLimit);
+            targetTiltZ = Mathf.Clamp(targetTiltZ + Mathf.Cos(swirlPhase) * swirl, -activeMaxLimit, activeMaxLimit);
         }
 
-        // E. 2-Axis Spring-Mass-Damper Differential Integration
-        // d2w/dt2 + 2*gamma*dw/dt + omega^2 * w = force
-        float omegaSq = currentResonantFrequency * currentResonantFrequency * 4f * Mathf.PI * Mathf.PI;
-        
-        // Semi-implicit Euler integration (unconditionally stable for harmonic oscillators)
-        float accelX = forceX - (2f * currentEffectiveDamping * wobbleVelocityX) - (omegaSq * wobbleX);
-        wobbleVelocityX += accelX * dt;
-        wobbleX += wobbleVelocityX * dt;
+        // E. Exact Analytical & SmoothDamp Damped Harmonic Oscillator Integration
+        // 100% unconditionally stable for ANY damping ratio and time step. Completely prevents high-viscosity explosion.
+        float omegaN = 2f * Mathf.PI * Mathf.Max(currentResonantFrequency, 0.05f);
+        float gamma = currentEffectiveDamping;
 
-        float accelZ = forceZ - (2f * currentEffectiveDamping * wobbleVelocityZ) - (omegaSq * wobbleZ);
-        wobbleVelocityZ += accelZ * dt;
-        wobbleZ += wobbleVelocityZ * dt;
+        UpdateOscillator(targetTiltX, omegaN, gamma, dt, ref wobbleX, ref wobbleVelocityX, activeMaxLimit);
+        UpdateOscillator(targetTiltZ, omegaN, gamma, dt, ref wobbleZ, ref wobbleVelocityZ, activeMaxLimit);
 
         // Apply natural rest threshold when container motion ceases
         if (acceleration.sqrMagnitude < 0.0005f && currentAngularVelocity.sqrMagnitude < 0.0005f)
         {
-            if (Mathf.Abs(wobbleX) < 0.0002f && Mathf.Abs(wobbleVelocityX) < 0.0005f) { wobbleX = 0f; wobbleVelocityX = 0f; }
-            if (Mathf.Abs(wobbleZ) < 0.0002f && Mathf.Abs(wobbleVelocityZ) < 0.0005f) { wobbleZ = 0f; wobbleVelocityZ = 0f; }
+            if (Mathf.Abs(wobbleX) < 0.0002f && Mathf.Abs(wobbleVelocityX) < 0.0005f && Mathf.Abs(targetTiltX) < 0.0002f)
+            {
+                wobbleX = 0f;
+                wobbleVelocityX = 0f;
+            }
+            if (Mathf.Abs(wobbleZ) < 0.0002f && Mathf.Abs(wobbleVelocityZ) < 0.0005f && Mathf.Abs(targetTiltZ) < 0.0002f)
+            {
+                wobbleZ = 0f;
+                wobbleVelocityZ = 0f;
+            }
         }
+    }
 
-        // Clamp to physical maximum wobble angle modulated by fill envelope
-        float activeMaxLimit = maxWobbleDisplacement * Mathf.Max(0.12f, currentFillMagnitudeEnvelope);
-        wobbleX = Mathf.Clamp(wobbleX, -activeMaxLimit, activeMaxLimit);
-        wobbleZ = Mathf.Clamp(wobbleZ, -activeMaxLimit, activeMaxLimit);
+    private void UpdateOscillator(float target, float omegaN, float gamma, float dt, ref float amount, ref float velocity, float maxLimit)
+    {
+        float e = amount - target;
+
+        if (omegaN > gamma)
+        {
+            // Underdamped oscillation: exact analytical solution (100% unconditionally stable)
+            float omegaD = Mathf.Sqrt(omegaN * omegaN - gamma * gamma);
+            float decay = Mathf.Exp(-gamma * dt);
+            float cosVal = Mathf.Cos(omegaD * dt);
+            float sinVal = Mathf.Sin(omegaD * dt);
+
+            float newE = decay * (e * cosVal + ((velocity + gamma * e) / omegaD) * sinVal);
+            float newV = decay * (velocity * cosVal - ((omegaN * omegaN * e + gamma * velocity) / omegaD) * sinVal);
+
+            amount = Mathf.Clamp(target + newE, -maxLimit, maxLimit);
+            velocity = newV;
+        }
+        else
+        {
+            // Critically damped / Overdamped: smooth creeping relaxation (Tree Sap & Heavy Gel)
+            // Viscous fluids cannot exceed physical creep velocity and approach target monotonically without vibration
+            float smoothTime = Mathf.Clamp(2.0f / Mathf.Max(gamma, 1f), 0.25f, 3.0f);
+            float maxSpeed = maxLimit * (1.5f / (1f + dynamicViscosityPaS * 0.2f));
+            amount = Mathf.SmoothDamp(amount, target, ref velocity, smoothTime, maxSpeed, dt);
+            amount = Mathf.Clamp(amount, -maxLimit, maxLimit);
+        }
     }
 
     [ContextMenu("Trigger Impulse Slosh")]
@@ -482,15 +518,16 @@ public class Week9FluidDynamicsController : MonoBehaviour
     public void TriggerImpulseSlosh(float impulse)
     {
         float envelope = Mathf.Max(0.2f, currentFillMagnitudeEnvelope);
-        wobbleVelocityX += impulse * 3.5f * envelope;
-        wobbleVelocityZ += impulse * 2.8f * envelope;
+        float viscousFactor = 1f / (1f + dynamicViscosityPaS * 0.35f);
+        wobbleVelocityX += impulse * 3.5f * envelope * viscousFactor;
+        wobbleVelocityZ += impulse * 2.8f * envelope * viscousFactor;
     }
 
     /// <summary>
     /// Implements physical rheological creep and viscous gravitational slump for thick fluids.
-    /// - Heavy Maze Gel (mu = 25 Pa*s): Bingham-plastic yield stress holds orientation for gelYieldDelay, then creeps to level.
-    /// - Tree Sap Resin (mu = 8.5 Pa*s): Clings to internal branch geometry before slow viscous flow.
-    /// - Synthetic Motor Oil (mu = 0.25 Pa*s): Pours and levels with natural viscous lag (0.65s), avoiding instant snap.
+    /// - Heavy Maze Gel (mu = 25 Pa*s): Bingham-plastic yield stress holds orientation for gelYieldDelay (0.85s), then creeps to level over 4.8s.
+    /// - Tree Sap Resin (mu = 8.5 Pa*s): Clings to internal branch geometry (0.50s) before slow viscous flow over 3.5s.
+    /// - Synthetic Motor Oil (mu = 0.25 Pa*s): Pours and levels with natural viscous lag (0.85s), avoiding instant snap.
     /// </summary>
     private void UpdateViscousCreepSlump(Quaternion deltaRot, float dt)
     {
@@ -507,22 +544,22 @@ public class Week9FluidDynamicsController : MonoBehaviour
 
         // Calibrate yield delay and slump duration based on fluid mechanics
         float effectiveYieldDelay = 0f;
-        float effectiveSlumpDuration = 0.65f;
+        float effectiveSlumpDuration = 0.85f;
 
         if (fluidType == Week9FluidType.HeavyMazeGel || dynamicViscosityPaS >= 15f)
         {
-            effectiveYieldDelay = gelYieldDelay; // 0.55s
-            effectiveSlumpDuration = gelSlumpDuration; // 2.4s
+            effectiveYieldDelay = gelYieldDelay; // 0.85s
+            effectiveSlumpDuration = gelSlumpDuration; // 4.8s
         }
         else if (fluidType == Week9FluidType.TreeSapResin || dynamicViscosityPaS >= 5.0f)
         {
-            effectiveYieldDelay = 0.35f;
-            effectiveSlumpDuration = 1.6f;
+            effectiveYieldDelay = 0.50f;
+            effectiveSlumpDuration = 3.5f;
         }
         else // Synthetic Motor Oil (mu = 0.25)
         {
             effectiveYieldDelay = 0f; // Continuous smooth viscous flow, no solid yield point
-            effectiveSlumpDuration = 0.65f; // Gentle viscous relaxation to level
+            effectiveSlumpDuration = 0.85f; // Gentle viscous relaxation to level
         }
 
         // 1. Container Rotation: Fluid clings to container walls and rotates WITH the container
@@ -556,8 +593,8 @@ public class Week9FluidDynamicsController : MonoBehaviour
                 // Non-Newtonian thixotropic slump rate:
                 // Starts slow (creeping), accelerates under continuous shear stress, and softly settles
                 float shearRate = Mathf.Pow(sinTheta, 1.2f);
-                float slumpSpeedDeg = (90f / Mathf.Max(0.2f, effectiveSlumpDuration)) * shearRate;
-                slumpSpeedDeg = Mathf.Max(slumpSpeedDeg, 8f); // Minimum creep rate so it doesn't stall indefinitely
+                float slumpSpeedDeg = (90f / Mathf.Max(0.5f, effectiveSlumpDuration)) * shearRate;
+                slumpSpeedDeg = Mathf.Max(slumpSpeedDeg, 0.5f); // Tiny minimum creep rate so it doesn't stall indefinitely
 
                 gelSurfaceNormal = Vector3.RotateTowards(gelSurfaceNormal, Vector3.up, slumpSpeedDeg * Mathf.Deg2Rad * dt, 0f);
                 gelSurfaceNormal.Normalize();

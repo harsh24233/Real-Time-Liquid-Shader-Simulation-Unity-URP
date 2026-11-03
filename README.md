@@ -44,9 +44,9 @@ $$\frac{d^2 \theta}{dt^2} + 2\zeta\omega_n \frac{d\theta}{dt} + \omega_n^2 \thet
 | **Vegetable Oil** | $915$ | $0.0500$ | $1.30\ \mathrm{Hz}$ | $1.6\ \mathrm{s}$ | Moderate viscosity, smooth laminar damping |
 | **Synthetic Motor Oil**| $890$ | $0.2500$ | $1.25\ \mathrm{Hz}$ | $1.8\ \mathrm{s}$ | Viscous boundary damping, laminar rotational lag ($0.65\ \mathrm{s}$) |
 | **Liquid Mercury** | $13550$ | $0.0015$ | $1.35\ \mathrm{Hz}$ | $4.5\ \mathrm{s}$ | Heavy momentum, massive inertial resistance, slow pendulum cadence |
-| **Tree Sap Resin** | $1380$ | $8.5000$ | $0.90\ \mathrm{Hz}$ | $1.2\ \mathrm{s}$ | Heavy overdamping, wall adhesion, creeping flow slump ($1.6\ \mathrm{s}$) |
+| **Tree Sap Resin** | $1380$ | $8.5000$ | $0.55\ \mathrm{Hz}$ | $2.0\ \mathrm{s}$ | Heavy overdamping, wall adhesion, creeping flow slump ($3.5\ \mathrm{s}$) |
 | **Honey** | $1420$ | $10.000$ | $0.85\ \mathrm{Hz}$ | $0.9\ \mathrm{s}$ | High viscosity, overdamped sluggish response |
-| **Heavy Maze Gel** | $1420$ | $25.000$ | $0.75\ \mathrm{Hz}$ | $0.8\ \mathrm{s}$ | Bingham-plastic yield delay ($0.55\ \mathrm{s}$), gravitational slump ($2.4\ \mathrm{s}$) |
+| **Heavy Maze Gel** | $1420$ | $25.000$ | $0.40\ \mathrm{Hz}$ | $1.2\ \mathrm{s}$ | Bingham-plastic yield delay ($0.85\ \mathrm{s}$), gravitational slump ($4.8\ \mathrm{s}$) |
 | **Ketchup** | $1250$ | $50.000$ | $0.65\ \mathrm{Hz}$ | $0.6\ \mathrm{s}$ | Non-Newtonian thixotropic paste, rapid boundary arrest |
 
 ---
