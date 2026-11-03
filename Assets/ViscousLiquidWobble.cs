@@ -94,19 +94,6 @@ public class ViscousLiquidWobble : MonoBehaviour
 
     private static readonly int WobbleXProp = Shader.PropertyToID("_WobbleX");
     private static readonly int WobbleZProp = Shader.PropertyToID("_WobbleZ");
-    private static readonly int FloatFillProp = Shader.PropertyToID("_Float");
-    private float initialWorldFillOffset = 0f;
-    private bool hasCachedWorldFill = false;
-
-    private void CacheWorldFillOffset()
-    {
-        if (hasCachedWorldFill) return;
-        if (liquidRenderer != null && liquidRenderer.sharedMaterial != null && liquidRenderer.sharedMaterial.HasProperty(FloatFillProp))
-        {
-            initialWorldFillOffset = liquidRenderer.sharedMaterial.GetFloat(FloatFillProp) - transform.position.y;
-            hasCachedWorldFill = true;
-        }
-    }
 
     private Vector3 lastPos;
     private Vector3 lastRot;
@@ -568,9 +555,6 @@ public class ViscousLiquidWobble : MonoBehaviour
     {
         if (liquidRenderer == null) return;
 
-        CacheWorldFillOffset();
-        float currentCutY = hasCachedWorldFill ? (transform.position.y + initialWorldFillOffset) : 0f;
-
         // 1. In Play Mode: update instantiated material unique to this container
         if (Application.isPlaying)
         {
@@ -582,8 +566,6 @@ public class ViscousLiquidWobble : MonoBehaviour
             {
                 activeMaterial.SetFloat(WobbleXProp, wx);
                 activeMaterial.SetFloat(WobbleZProp, wz);
-                if (hasCachedWorldFill && activeMaterial.HasProperty(FloatFillProp))
-                    activeMaterial.SetFloat(FloatFillProp, currentCutY);
             }
         }
         else
@@ -601,7 +583,6 @@ public class ViscousLiquidWobble : MonoBehaviour
         liquidRenderer.GetPropertyBlock(propBlock);
         propBlock.SetFloat(WobbleXProp, wx);
         propBlock.SetFloat(WobbleZProp, wz);
-        if (hasCachedWorldFill) propBlock.SetFloat(FloatFillProp, currentCutY);
         liquidRenderer.SetPropertyBlock(propBlock);
     }
 

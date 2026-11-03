@@ -43,7 +43,7 @@ public class ShowcaseCameraController : MonoBehaviour
 
         public void TriggerSlosh()
         {
-            if (Week9Sim != null) Week9Sim.transform.Rotate(Vector3.forward, 12f, Space.World);
+            if (Week9Sim != null) Week9Sim.TriggerImpulseSlosh();
             if (ArbitrarySim != null) ArbitrarySim.TriggerImpulseSlosh();
             if (ViscousSim != null) ViscousSim.TestSlosh();
             if (LiquidSim != null) LiquidSim.TestSlosh();

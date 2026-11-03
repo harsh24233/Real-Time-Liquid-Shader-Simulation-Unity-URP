@@ -762,26 +762,9 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
         }
     }
 
-    private static readonly int FloatFillProp = Shader.PropertyToID("_Float");
-    private float initialWorldFillOffset = 0f;
-    private bool hasCachedWorldFill = false;
-
-    private void CacheWorldFillOffset()
-    {
-        if (hasCachedWorldFill) return;
-        if (fluidRenderer != null && fluidRenderer.sharedMaterial != null && fluidRenderer.sharedMaterial.HasProperty(FloatFillProp))
-        {
-            initialWorldFillOffset = fluidRenderer.sharedMaterial.GetFloat(FloatFillProp) - transform.position.y;
-            hasCachedWorldFill = true;
-        }
-    }
-
     private void ApplyWobble(float wx, float wz)
     {
         if (fluidRenderer == null) return;
-
-        CacheWorldFillOffset();
-        float currentCutY = hasCachedWorldFill ? (transform.position.y + initialWorldFillOffset) : 0f;
 
         // 1. In Play Mode: update the instantiated material instance unique to this renderer
         if (Application.isPlaying)
@@ -794,8 +777,6 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
             {
                 activeMaterial.SetFloat(WobbleXProp, wx);
                 activeMaterial.SetFloat(WobbleZProp, wz);
-                if (hasCachedWorldFill && activeMaterial.HasProperty(FloatFillProp))
-                    activeMaterial.SetFloat(FloatFillProp, currentCutY);
             }
         }
         else
@@ -813,7 +794,6 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
         fluidRenderer.GetPropertyBlock(propBlock);
         propBlock.SetFloat(WobbleXProp, wx);
         propBlock.SetFloat(WobbleZProp, wz);
-        if (hasCachedWorldFill) propBlock.SetFloat(FloatFillProp, currentCutY);
         fluidRenderer.SetPropertyBlock(propBlock);
     }
 

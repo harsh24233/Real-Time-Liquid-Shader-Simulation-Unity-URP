@@ -99,9 +99,9 @@ public class Week9FluidDynamicsController : MonoBehaviour
     [SerializeField] private bool useSharedMaterialInEditor = true;
 
     [Header("Kinematic Motion Sensitivities")]
-    [SerializeField] private float translationSensitivity = 1.2f;
-    [SerializeField] private float rotationSensitivity = 0.7f;
-    [SerializeField] private float maxWobbleDisplacement = 0.45f;
+    [SerializeField] private float translationSensitivity = 2.5f;
+    [SerializeField] private float rotationSensitivity = 1.5f;
+    [SerializeField] private float maxWobbleDisplacement = 0.55f;
 
     // Physical state variables
     private Vector3 lastPosition;
@@ -302,10 +302,9 @@ public class Week9FluidDynamicsController : MonoBehaviour
         // 4. Fill Amount Magnitude Changing Logic & Physical Dynamics Coupling
         ComputeFillAmountCoupledDynamics(acceleration, currentAngularVelocity, dt);
 
-        // 5. Update Shader Properties (worldFillPos.y maintains 100% constant fill volume as container translates up/down in world space)
+        // 5. Update Shader Properties (localFillY is with respect to object, perfectly invariant to world movement!)
         float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
-        Vector3 worldFillPos = transform.TransformPoint(new Vector3(0f, localFillY, 0f));
-        SendShaderProperties(wobbleX, wobbleZ, worldFillPos.y);
+        SendShaderProperties(wobbleX, wobbleZ, localFillY);
 
         lastPosition = currentPos;
         lastRotation = currentRot;
@@ -393,23 +392,29 @@ public class Week9FluidDynamicsController : MonoBehaviour
         wobbleVelocityZ += accelZ * dt;
         wobbleZ += wobbleVelocityZ * dt;
 
-        // Apply natural rest damping when container motion ceases
+        // Apply natural rest threshold when container motion ceases
         if (acceleration.sqrMagnitude < 0.0005f && currentAngularVelocity.sqrMagnitude < 0.0005f)
         {
-            wobbleVelocityX = Mathf.Lerp(wobbleVelocityX, 0f, dt * currentEffectiveDamping);
-            wobbleVelocityZ = Mathf.Lerp(wobbleVelocityZ, 0f, dt * currentEffectiveDamping);
-            if (Mathf.Abs(wobbleX) < 0.0005f && Mathf.Abs(wobbleVelocityX) < 0.001f) { wobbleX = 0f; wobbleVelocityX = 0f; }
-            if (Mathf.Abs(wobbleZ) < 0.0005f && Mathf.Abs(wobbleVelocityZ) < 0.001f) { wobbleZ = 0f; wobbleVelocityZ = 0f; }
+            if (Mathf.Abs(wobbleX) < 0.0002f && Mathf.Abs(wobbleVelocityX) < 0.0005f) { wobbleX = 0f; wobbleVelocityX = 0f; }
+            if (Mathf.Abs(wobbleZ) < 0.0002f && Mathf.Abs(wobbleVelocityZ) < 0.0005f) { wobbleZ = 0f; wobbleVelocityZ = 0f; }
         }
 
         // Clamp to physical maximum wobble angle modulated by fill envelope
-        float activeMaxLimit = maxWobbleDisplacement * Mathf.Max(0.08f, currentFillMagnitudeEnvelope);
+        float activeMaxLimit = maxWobbleDisplacement * Mathf.Max(0.12f, currentFillMagnitudeEnvelope);
         wobbleX = Mathf.Clamp(wobbleX, -activeMaxLimit, activeMaxLimit);
         wobbleZ = Mathf.Clamp(wobbleZ, -activeMaxLimit, activeMaxLimit);
     }
 
+    [ContextMenu("Trigger Impulse Slosh")]
+    public void TriggerImpulseSlosh(float impulse = 0.35f)
+    {
+        float envelope = Mathf.Max(0.2f, currentFillMagnitudeEnvelope);
+        wobbleVelocityX += impulse * 3.5f * envelope;
+        wobbleVelocityZ += impulse * 2.8f * envelope;
+    }
+
     /// <summary>
-    /// Updates the shader cut plane using worldFillPos.y (derived from localFillY transformed to world space).
+    /// Updates the shader cut plane using localFillY (with respect to object).
     /// This guarantees the fluid volume stays 100% constant when moving the container up/down in world space!
     /// </summary>
     public void UpdateFillCutPlane(bool forceUpdate = false)
@@ -418,8 +423,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
         if (fluidRenderer == null) return;
 
         float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
-        Vector3 worldFillPos = transform.TransformPoint(new Vector3(0f, localFillY, 0f));
-        SendShaderProperties(wobbleX, wobbleZ, worldFillPos.y);
+        SendShaderProperties(wobbleX, wobbleZ, localFillY);
     }
 
 #if UNITY_EDITOR
@@ -458,8 +462,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
         ComputeFillAmountCoupledDynamics(acceleration, currentAngularVelocity, dt);
 
         float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
-        Vector3 worldFillPos = transform.TransformPoint(new Vector3(0f, localFillY, 0f));
-        SendShaderProperties(wobbleX, wobbleZ, worldFillPos.y);
+        SendShaderProperties(wobbleX, wobbleZ, localFillY);
 
         lastPosition = currentPos;
         lastRotation = currentRot;
