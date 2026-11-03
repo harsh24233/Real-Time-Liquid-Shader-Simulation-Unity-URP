@@ -165,6 +165,24 @@ public class Week9FluidDynamicsController : MonoBehaviour
     {
         CacheRenderer();
         UpdateFillCutPlane(true);
+#if UNITY_EDITOR
+        EditorApplication.update -= OnEditorUpdate;
+        EditorApplication.update += OnEditorUpdate;
+#endif
+    }
+
+    private void OnDisable()
+    {
+#if UNITY_EDITOR
+        EditorApplication.update -= OnEditorUpdate;
+#endif
+    }
+
+    private void OnDestroy()
+    {
+#if UNITY_EDITOR
+        EditorApplication.update -= OnEditorUpdate;
+#endif
     }
 
     private void Reset()
@@ -284,9 +302,10 @@ public class Week9FluidDynamicsController : MonoBehaviour
         // 4. Fill Amount Magnitude Changing Logic & Physical Dynamics Coupling
         ComputeFillAmountCoupledDynamics(acceleration, currentAngularVelocity, dt);
 
-        // 5. Update Shader Properties (fillCutY is local to container center, perfectly invariant to world movement)
+        // 5. Update Shader Properties (worldFillPos.y maintains 100% constant fill volume as container translates up/down in world space)
         float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
-        SendShaderProperties(wobbleX, wobbleZ, localFillY);
+        Vector3 worldFillPos = transform.TransformPoint(new Vector3(0f, localFillY, 0f));
+        SendShaderProperties(wobbleX, wobbleZ, worldFillPos.y);
 
         lastPosition = currentPos;
         lastRotation = currentRot;
@@ -390,7 +409,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
     }
 
     /// <summary>
-    /// Updates the shader cut plane using localFillY (relative to container center).
+    /// Updates the shader cut plane using worldFillPos.y (derived from localFillY transformed to world space).
     /// This guarantees the fluid volume stays 100% constant when moving the container up/down in world space!
     /// </summary>
     public void UpdateFillCutPlane(bool forceUpdate = false)
@@ -399,8 +418,63 @@ public class Week9FluidDynamicsController : MonoBehaviour
         if (fluidRenderer == null) return;
 
         float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
-        SendShaderProperties(wobbleX, wobbleZ, localFillY);
+        Vector3 worldFillPos = transform.TransformPoint(new Vector3(0f, localFillY, 0f));
+        SendShaderProperties(wobbleX, wobbleZ, worldFillPos.y);
     }
+
+#if UNITY_EDITOR
+    private double lastEditorTime = 0;
+
+    /// <summary>
+    /// Continuous sloshing and physics integration in Unity Editor Scene View (Edit Mode).
+    /// Prevents fluid from ever freezing or getting stuck when moving containers in Scene View.
+    /// </summary>
+    private void OnEditorUpdate()
+    {
+        if (Application.isPlaying) return;
+
+        double now = EditorApplication.timeSinceStartup;
+        float dt = lastEditorTime > 0 ? Mathf.Clamp((float)(now - lastEditorTime), 0.001f, 0.05f) : 0.016f;
+        lastEditorTime = now;
+
+        Vector3 currentPos = transform.position;
+        Quaternion currentRot = transform.rotation;
+
+        bool moved = (currentPos != lastPosition) || (currentRot != lastRotation);
+        bool hadWobble = Mathf.Abs(wobbleX) > 0.0002f || Mathf.Abs(wobbleVelocityX) > 0.0005f ||
+                         Mathf.Abs(wobbleZ) > 0.0002f || Mathf.Abs(wobbleVelocityZ) > 0.0005f;
+
+        Vector3 rawVelocity = (currentPos - lastPosition) / dt;
+        currentVelocity = Vector3.Lerp(currentVelocity, rawVelocity, Mathf.Clamp01(dt * 15f));
+        Vector3 acceleration = (currentVelocity - previousVelocity) / dt;
+        acceleration = Vector3.ClampMagnitude(acceleration, 25f);
+
+        Quaternion deltaRot = currentRot * Quaternion.Inverse(lastRotation);
+        deltaRot.ToAngleAxis(out float angleDeg, out Vector3 axis);
+        if (angleDeg > 180f) angleDeg -= 360f;
+        Vector3 rawAngVel = (axis * (angleDeg * Mathf.Deg2Rad)) / dt;
+        currentAngularVelocity = Vector3.Lerp(currentAngularVelocity, rawAngVel, Mathf.Clamp01(dt * 15f));
+
+        ComputeFillAmountCoupledDynamics(acceleration, currentAngularVelocity, dt);
+
+        float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
+        Vector3 worldFillPos = transform.TransformPoint(new Vector3(0f, localFillY, 0f));
+        SendShaderProperties(wobbleX, wobbleZ, worldFillPos.y);
+
+        lastPosition = currentPos;
+        lastRotation = currentRot;
+        previousVelocity = currentVelocity;
+
+        bool hasWobble = Mathf.Abs(wobbleX) > 0.0002f || Mathf.Abs(wobbleVelocityX) > 0.0005f ||
+                         Mathf.Abs(wobbleZ) > 0.0002f || Mathf.Abs(wobbleVelocityZ) > 0.0005f;
+
+        if (moved || hadWobble || hasWobble)
+        {
+            EditorApplication.QueuePlayerLoopUpdate();
+            SceneView.RepaintAll();
+        }
+    }
+#endif
 
     private void SendShaderProperties(float wx, float wz, float fillCutY)
     {

@@ -52,6 +52,19 @@ public class LiquidWobble : MonoBehaviour
 
     private static readonly int WobbleXProp = Shader.PropertyToID("_WobbleX");
     private static readonly int WobbleZProp = Shader.PropertyToID("_WobbleZ");
+    private static readonly int FloatFillProp = Shader.PropertyToID("_Float");
+    private float initialWorldFillOffset = 0f;
+    private bool hasCachedWorldFill = false;
+
+    private void CacheWorldFillOffset()
+    {
+        if (hasCachedWorldFill) return;
+        if (liquidRenderer != null && liquidRenderer.sharedMaterial != null && liquidRenderer.sharedMaterial.HasProperty(FloatFillProp))
+        {
+            initialWorldFillOffset = liquidRenderer.sharedMaterial.GetFloat(FloatFillProp) - transform.position.y;
+            hasCachedWorldFill = true;
+        }
+    }
 
     private Vector3 lastPos;
     private Vector3 lastRot;
@@ -441,6 +454,9 @@ public class LiquidWobble : MonoBehaviour
     {
         if (liquidRenderer == null) return;
 
+        CacheWorldFillOffset();
+        float currentCutY = hasCachedWorldFill ? (transform.position.y + initialWorldFillOffset) : 0f;
+
         // 1. In Play Mode: update instantiated material unique to this renderer instance
         if (Application.isPlaying)
         {
@@ -452,6 +468,8 @@ public class LiquidWobble : MonoBehaviour
             {
                 mat.SetFloat(WobbleXProp, wx);
                 mat.SetFloat(WobbleZProp, wz);
+                if (hasCachedWorldFill && mat.HasProperty(FloatFillProp))
+                    mat.SetFloat(FloatFillProp, currentCutY);
             }
         }
         else
@@ -469,6 +487,7 @@ public class LiquidWobble : MonoBehaviour
         liquidRenderer.GetPropertyBlock(propBlock);
         propBlock.SetFloat(WobbleXProp, wx);
         propBlock.SetFloat(WobbleZProp, wz);
+        if (hasCachedWorldFill) propBlock.SetFloat(FloatFillProp, currentCutY);
         liquidRenderer.SetPropertyBlock(propBlock);
     }
 

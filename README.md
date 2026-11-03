@@ -255,13 +255,24 @@ Shallow fill levels exhibit longer wave periods, while deeper fill levels shift 
 - **`[F5]`**: **Free-Fly Spectator Mode**.
 - **`[H]`**: Toggle on-screen telemetry HUD.
 
-### In-Game Bottle Authority & Dynamic Fill
-- **Left-Click & Drag**: Click directly on **any** bottle or structure in the scene to move/shake it in real-time.
+### In-Game Bottle Authority, 3D Rotation & Dynamic Fill
+- **Left-Click & Drag**: Click directly on **any** bottle or structure in the scene to select and move/shake it in real-time. Smooth plane interpolation eliminates snapping or sticking.
+- **`[Shift + Left-Click Drag]` or `[Middle-Click Drag]`**: **Interactive Free 3D Rotation** directly with the mouse! Free-rotate any selected bottle like a trackball (horizontal mouse rolls/yaws, vertical mouse pitches).
+- **Interactive Move & Rotate Gizmos (`[G]` to toggle)**:
+  - **Move Tool Mode**: Interactive red ($X$), green ($Y$), and blue ($Z$) move handles to slide containers along axes.
+  - **Rotate Tool Mode**: Interactive circular rotation rings and handles for **Pitch** ($R_x$), **Yaw** ($R_y$), and **Roll** ($R_z$).
+- **Direct 3D Rotation Hotkeys**:
+  - **`[Q] / [E]`**: Roll tilt bottle left / right ($90^\circ/\mathrm{s}$).
+  - **`[Z] / [C]`**: Pitch tilt bottle forward / backward ($90^\circ/\mathrm{s}$).
+  - **`[X]`**: Instantly level out the container upright ($0^\circ, \mathrm{Yaw}, 0^\circ$).
+- **On-Screen Rotation Authority Panel**:
+  - Real-time Euler orientation telemetry: $\mathrm{Rot}(Pitch^\circ, Yaw^\circ, Roll^\circ)$.
+  - 1-click rotation buttons: `Pitch ±15°`, `Yaw ±15°`, `Roll ±15°`, `Invert 180° (Upside-Down)`, `Level Upright 0°`.
 - **Mouse Scroll Wheel**: Push or pull the dragged container closer or further in depth ($Z$-axis).
-- **Interactive 3D Move Gizmo**: Displays interactive red ($X$), green ($Y$), and blue ($Z$) move handles on the selected vessel.
+- **Constant Fluid Volume Invariance**: Vertically dragging or nudging containers up and down in 3D maintains 100% constant fluid fill level without draining or overfilling across all 24 vessels.
+- **Continuous Scene View Preview**: Moving or rotating any container in Unity Editor Scene View (Edit Mode) continuously simulates spring-mass-damper sloshing and fluid settling without freezing.
 - **`[` / `]`**: Dynamically decrease or increase fluid fill level ($F$) in real-time. Watch sloshing peak at $50\%$ and suppress at $10\%$ and $95\%$.
-- **`[Alt + Arrow Keys]`**: Nudge selected bottle in 3D.
-- **`[Alt + Q/E]`**: Tilt selected bottle left or right.
+- **`[Alt + Arrow Keys]`**: Nudge selected bottle position in 3D.
 - **`[1-7]`**: Switch fluid profile (Petrol, Mercury, Motor Oil, Coolant, CryoGas, Tree Sap, Maze Gel) on the selected Week 9 vessel.
 - **`[R]`**: Reset selected vessel to its original shelf plinth.
 - **`[Backspace]`**: Reset all vessels across all 3 tiers.

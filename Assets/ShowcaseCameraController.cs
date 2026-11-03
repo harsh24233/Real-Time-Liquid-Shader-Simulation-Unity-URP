@@ -23,6 +23,10 @@ public class ShowcaseCameraController : MonoBehaviour
     }
 
     public enum GizmoAxis { None, X, Y, Z }
+    public enum GizmoToolMode { Move, Rotate }
+    public enum RotateAxis { None, Pitch, Yaw, Roll }
+
+    public static ShowcaseCameraController Instance { get; private set; }
 
     [System.Serializable]
     public class VesselEntry
@@ -106,23 +110,32 @@ public class ShowcaseCameraController : MonoBehaviour
     private bool isLookingWithMouse = false;
     private bool showHUD = true;
 
-    // Dragging state
+    // Dragging and Rotation state
+    [Header("Gizmo Tool Mode")]
+    [SerializeField] private GizmoToolMode gizmoMode = GizmoToolMode.Move;
     private bool isDraggingVessel = false;
     private float dragPlaneDistance = 3.5f;
     private Vector3 dragOffset = Vector3.zero;
     private GizmoAxis activeGizmoAxis = GizmoAxis.None;
+    private RotateAxis activeRotateAxis = RotateAxis.None;
 
     // Texture for OnGUI line drawing
     private static Texture2D lineTex;
-    private Rect hudRect = new Rect(16, 16, 500, 570);
+    private Rect hudRect = new Rect(16, 16, 510, 620);
 
     private void Awake()
     {
+        Instance = this;
         if (targetCamera == null) targetCamera = Camera.main;
         if (targetCamera == null) targetCamera = GetComponent<Camera>();
 
         RefreshAllVessels();
         SetViewMode(currentMode);
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this) Instance = null;
     }
 
     public void FindWeek2Vessels()
@@ -366,13 +379,26 @@ public class ShowcaseCameraController : MonoBehaviour
             sel.ResetToInitial();
         }
 
-        // 2. Slosh selected bottle with Space key ONLY when Alt is held (never during camera flight)
+        // 2. Toggle Gizmo Tool Mode (Move / Rotate) with G key
+        if (kb.gKey.wasPressedThisFrame)
+        {
+            gizmoMode = (gizmoMode == GizmoToolMode.Move) ? GizmoToolMode.Rotate : GizmoToolMode.Move;
+        }
+
+        // 3. Direct 3D Rotation Authority (Roll with Q/E, Pitch with Z/C, Level with X)
+        if (kb.qKey.isPressed) sel.Transform.Rotate(Vector3.forward, 90f * Time.deltaTime, Space.World);
+        if (kb.eKey.isPressed) sel.Transform.Rotate(Vector3.forward, -90f * Time.deltaTime, Space.World);
+        if (kb.zKey.isPressed) sel.Transform.Rotate(Vector3.right, 90f * Time.deltaTime, Space.World);
+        if (kb.cKey.isPressed) sel.Transform.Rotate(Vector3.right, -90f * Time.deltaTime, Space.World);
+        if (kb.xKey.wasPressedThisFrame) sel.Transform.rotation = Quaternion.Euler(0f, sel.Transform.eulerAngles.y, 0f);
+
+        // 4. Slosh selected bottle with Space key ONLY when Alt is held (never during camera flight)
         if (isAltHeld && kb.spaceKey.wasPressedThisFrame)
         {
             sel.TriggerSlosh();
         }
 
-        // 3. Nudge / Tilt selected bottle in 3D ONLY when Alt is held
+        // 5. Nudge selected bottle in 3D ONLY when Alt is held
         if (isAltHeld)
         {
             float nudgeSpeed = 3.0f * Time.deltaTime;
@@ -396,13 +422,9 @@ public class ShowcaseCameraController : MonoBehaviour
             {
                 sel.Transform.position += nudge.normalized * nudgeSpeed;
             }
-
-            // Tilt bottle with Alt + Q / E
-            if (kb.qKey.isPressed) sel.Transform.Rotate(Vector3.forward, 90f * Time.deltaTime, Space.World);
-            if (kb.eKey.isPressed) sel.Transform.Rotate(Vector3.forward, -90f * Time.deltaTime, Space.World);
         }
 
-        // 4. Switch fluid profile with 1-7 number keys
+        // 6. Switch fluid profile with 1-7 number keys
         if (kb.digit1Key.wasPressedThisFrame) sel.SetFluid(0);
         if (kb.digit2Key.wasPressedThisFrame) sel.SetFluid(1);
         if (kb.digit3Key.wasPressedThisFrame) sel.SetFluid(2);
@@ -417,6 +439,7 @@ public class ShowcaseCameraController : MonoBehaviour
     {
 #if ENABLE_INPUT_SYSTEM
         var mouse = Mouse.current;
+        var kb = Keyboard.current;
         if (mouse == null || targetCamera == null) return;
 
         Vector2 mouseScreenPos = mouse.position.ReadValue();
@@ -425,22 +448,39 @@ public class ShowcaseCameraController : MonoBehaviour
         bool insideHUD = showHUD && hudRect.Contains(guiMousePos);
         Ray ray = targetCamera.ScreenPointToRay(mouseScreenPos);
 
-        // Left Mouse Button Down
-        if (mouse.leftButton.wasPressedThisFrame && !insideHUD)
+        bool isShiftHeld = kb != null && (kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed);
+        bool isMiddlePressed = mouse.middleButton.wasPressedThisFrame;
+        bool isMiddleHeld = mouse.middleButton.isPressed;
+
+        // 1. Mouse Button Down (Left Click or Middle Click)
+        if ((mouse.leftButton.wasPressedThisFrame || isMiddlePressed) && !insideHUD)
         {
-            // 1. Check Gizmo axis click
             VesselEntry sel = GetSelectedVessel();
-            if (sel != null && sel.Transform != null)
+
+            // A. Check Gizmo handles if already selected and not using free-rotation modifiers
+            if (sel != null && sel.Transform != null && !isShiftHeld && !isMiddlePressed)
             {
-                GizmoAxis clickedAxis = CheckGizmoAxisClick(guiMousePos, sel.Transform.position);
-                if (clickedAxis != GizmoAxis.None)
+                if (gizmoMode == GizmoToolMode.Move)
                 {
-                    activeGizmoAxis = clickedAxis;
-                    return;
+                    GizmoAxis clickedAxis = CheckGizmoAxisClick(guiMousePos, sel.Transform.position);
+                    if (clickedAxis != GizmoAxis.None)
+                    {
+                        activeGizmoAxis = clickedAxis;
+                        return;
+                    }
+                }
+                else
+                {
+                    RotateAxis clickedRot = CheckRotateGizmoClick(guiMousePos, sel.Transform.position);
+                    if (clickedRot != RotateAxis.None)
+                    {
+                        activeRotateAxis = clickedRot;
+                        return;
+                    }
                 }
             }
 
-            // 2. Raycast to select & drag bottle
+            // B. Raycast to select & drag/rotate bottle
             if (Physics.Raycast(ray, out RaycastHit hit, 100f))
             {
                 VesselEntry hitVessel = FindVesselFromTransform(hit.collider.transform);
@@ -459,21 +499,55 @@ public class ShowcaseCameraController : MonoBehaviour
             }
             else
             {
+                // Clicked in empty space -> release any drag state
                 isDraggingVessel = false;
                 activeGizmoAxis = GizmoAxis.None;
+                activeRotateAxis = RotateAxis.None;
             }
         }
 
-        // While Left Mouse Button is Pressed
-        if (mouse.leftButton.isPressed)
+        // 2. Continuous Dragging / Rotating while Left or Middle Button is Held
+        if (mouse.leftButton.isPressed || isMiddleHeld)
         {
             VesselEntry sel = GetSelectedVessel();
             if (sel != null && sel.Transform != null)
             {
-                // A. Gizmo Axis Dragging
+                Vector2 mouseDelta = mouse.delta.ReadValue();
+
+                // A. Direct Free 3D Rotation via Shift + Left Drag OR Middle-Click Drag
+                if ((isShiftHeld && mouse.leftButton.isPressed) || isMiddleHeld)
+                {
+                    if (mouseDelta.sqrMagnitude > 0.001f)
+                    {
+                        float rotSens = 0.35f;
+                        sel.Transform.Rotate(targetCamera.transform.up, -mouseDelta.x * rotSens, Space.World);
+                        sel.Transform.Rotate(targetCamera.transform.right, mouseDelta.y * rotSens, Space.World);
+                    }
+                    return;
+                }
+
+                // B. Rotate Gizmo Axis Dragging
+                if (activeRotateAxis != RotateAxis.None)
+                {
+                    float rotAmount = (mouseDelta.x + mouseDelta.y) * 0.9f;
+                    switch (activeRotateAxis)
+                    {
+                        case RotateAxis.Pitch:
+                            sel.Transform.Rotate(Vector3.right, rotAmount, Space.World);
+                            break;
+                        case RotateAxis.Yaw:
+                            sel.Transform.Rotate(Vector3.up, -rotAmount, Space.World);
+                            break;
+                        case RotateAxis.Roll:
+                            sel.Transform.Rotate(Vector3.forward, -rotAmount, Space.World);
+                            break;
+                    }
+                    return;
+                }
+
+                // C. Move Gizmo Axis Dragging
                 if (activeGizmoAxis != GizmoAxis.None)
                 {
-                    Vector2 mouseDelta = mouse.delta.ReadValue();
                     Vector3 axisWorld = activeGizmoAxis == GizmoAxis.X ? Vector3.right :
                                         activeGizmoAxis == GizmoAxis.Y ? Vector3.up : Vector3.forward;
 
@@ -486,10 +560,10 @@ public class ShowcaseCameraController : MonoBehaviour
                     return;
                 }
 
-                // B. Free Dragging in 3D
+                // D. Free 3D Translation Dragging
                 if (isDraggingVessel)
                 {
-                    // Scroll wheel adjusts depth
+                    // Scroll wheel adjusts depth (push/pull)
                     float scroll = mouse.scroll.ReadValue().y;
                     if (Mathf.Abs(scroll) > 0.01f)
                     {
@@ -497,20 +571,22 @@ public class ShowcaseCameraController : MonoBehaviour
                     }
 
                     float denom = Vector3.Dot(ray.direction, targetCamera.transform.forward);
-                    if (denom > 0.001f)
+                    if (denom > 0.01f)
                     {
                         Vector3 planePoint = ray.origin + ray.direction * (dragPlaneDistance / denom);
-                        sel.Transform.position = planePoint + dragOffset;
+                        Vector3 desiredPos = planePoint + dragOffset;
+                        sel.Transform.position = Vector3.Lerp(sel.Transform.position, desiredPos, Time.deltaTime * 40f);
                     }
                 }
             }
         }
 
-        // Left Mouse Button Released
-        if (mouse.leftButton.wasReleasedThisFrame)
+        // 3. Mouse Released
+        if (mouse.leftButton.wasReleasedThisFrame || mouse.middleButton.wasReleasedThisFrame)
         {
             isDraggingVessel = false;
             activeGizmoAxis = GizmoAxis.None;
+            activeRotateAxis = RotateAxis.None;
         }
 #endif
     }
@@ -529,12 +605,34 @@ public class ShowcaseCameraController : MonoBehaviour
         Vector2 ptY = new Vector2(scrY.x, Screen.height - scrY.y);
         Vector2 ptZ = new Vector2(scrZ.x, Screen.height - scrZ.y);
 
-        float radius = 22f;
+        float radius = 24f;
         if (Vector2.Distance(guiMousePos, ptX) < radius) return GizmoAxis.X;
         if (Vector2.Distance(guiMousePos, ptY) < radius) return GizmoAxis.Y;
         if (Vector2.Distance(guiMousePos, ptZ) < radius) return GizmoAxis.Z;
 
         return GizmoAxis.None;
+    }
+
+    private RotateAxis CheckRotateGizmoClick(Vector2 guiMousePos, Vector3 vesselWorldPos)
+    {
+        Vector3 origin = targetCamera.WorldToScreenPoint(vesselWorldPos);
+        if (origin.z <= 0.1f) return RotateAxis.None;
+
+        float handleOffset = 0.55f;
+        Vector3 scrPitch = targetCamera.WorldToScreenPoint(vesselWorldPos + targetCamera.transform.right * handleOffset);
+        Vector3 scrYaw = targetCamera.WorldToScreenPoint(vesselWorldPos + targetCamera.transform.up * handleOffset);
+        Vector3 scrRoll = targetCamera.WorldToScreenPoint(vesselWorldPos - targetCamera.transform.right * handleOffset);
+
+        Vector2 ptPitch = new Vector2(scrPitch.x, Screen.height - scrPitch.y);
+        Vector2 ptYaw = new Vector2(scrYaw.x, Screen.height - scrYaw.y);
+        Vector2 ptRoll = new Vector2(scrRoll.x, Screen.height - scrRoll.y);
+
+        float radius = 24f;
+        if (Vector2.Distance(guiMousePos, ptPitch) < radius) return RotateAxis.Pitch;
+        if (Vector2.Distance(guiMousePos, ptYaw) < radius) return RotateAxis.Yaw;
+        if (Vector2.Distance(guiMousePos, ptRoll) < radius) return RotateAxis.Roll;
+
+        return RotateAxis.None;
     }
 
     public void SetViewMode(CameraViewMode mode)
@@ -607,7 +705,10 @@ public class ShowcaseCameraController : MonoBehaviour
 
         if (currentMode == CameraViewMode.IndividualVesselFocus)
         {
-            UpdateIndividualFocus();
+            if (!isDraggingVessel && activeGizmoAxis == GizmoAxis.None && activeRotateAxis == RotateAxis.None)
+            {
+                UpdateIndividualFocus();
+            }
         }
 
         if (currentMode == CameraViewMode.FreeFly)
@@ -660,8 +761,21 @@ public class ShowcaseCameraController : MonoBehaviour
     {
         Color saved = GUI.backgroundColor;
         GUI.backgroundColor = color;
-        GUI.Box(new Rect(point.x - 12, point.y - 12, 24, 24), $"<b>{label}</b>");
+        GUI.Box(new Rect(point.x - 13, point.y - 13, 26, 26), $"<b>{label}</b>");
         GUI.backgroundColor = saved;
+    }
+
+    private static void DrawScreenCircle(Vector2 center, float radius, Color color, int segments = 24)
+    {
+        float step = 360f / segments;
+        Vector2 prev = center + new Vector2(Mathf.Cos(0) * radius, Mathf.Sin(0) * radius);
+        for (int i = 1; i <= segments; i++)
+        {
+            float rad = i * step * Mathf.Deg2Rad;
+            Vector2 next = center + new Vector2(Mathf.Cos(rad) * radius, Mathf.Sin(rad) * radius);
+            DrawScreenLine(prev, next, color, 1.5f);
+            prev = next;
+        }
     }
 
     private void DrawInGameGizmo(VesselEntry sel)
@@ -674,28 +788,51 @@ public class ShowcaseCameraController : MonoBehaviour
 
         Vector2 guiOrigin = new Vector2(scrOrigin.x, Screen.height - scrOrigin.y);
 
-        float handleLen = 0.5f;
-        Vector3 scrX = targetCamera.WorldToScreenPoint(worldPos + Vector3.right * handleLen);
-        Vector3 scrY = targetCamera.WorldToScreenPoint(worldPos + Vector3.up * handleLen);
-        Vector3 scrZ = targetCamera.WorldToScreenPoint(worldPos + Vector3.forward * handleLen);
+        if (gizmoMode == GizmoToolMode.Move)
+        {
+            float handleLen = 0.5f;
+            Vector3 scrX = targetCamera.WorldToScreenPoint(worldPos + Vector3.right * handleLen);
+            Vector3 scrY = targetCamera.WorldToScreenPoint(worldPos + Vector3.up * handleLen);
+            Vector3 scrZ = targetCamera.WorldToScreenPoint(worldPos + Vector3.forward * handleLen);
 
-        Vector2 ptX = new Vector2(scrX.x, Screen.height - scrX.y);
-        Vector2 ptY = new Vector2(scrY.x, Screen.height - scrY.y);
-        Vector2 ptZ = new Vector2(scrZ.x, Screen.height - scrZ.y);
+            Vector2 ptX = new Vector2(scrX.x, Screen.height - scrX.y);
+            Vector2 ptY = new Vector2(scrY.x, Screen.height - scrY.y);
+            Vector2 ptZ = new Vector2(scrZ.x, Screen.height - scrZ.y);
 
-        // Draw 3D Move Axis Lines
-        DrawScreenLine(guiOrigin, ptX, new Color(1f, 0.25f, 0.25f, 0.9f), 3f);
-        DrawScreenLine(guiOrigin, ptY, new Color(0.25f, 1f, 0.25f, 0.9f), 3f);
-        DrawScreenLine(guiOrigin, ptZ, new Color(0.30f, 0.65f, 1f, 0.9f), 3f);
+            // Draw 3D Move Axis Lines
+            DrawScreenLine(guiOrigin, ptX, new Color(1f, 0.25f, 0.25f, 0.9f), 3f);
+            DrawScreenLine(guiOrigin, ptY, new Color(0.25f, 1f, 0.25f, 0.9f), 3f);
+            DrawScreenLine(guiOrigin, ptZ, new Color(0.30f, 0.65f, 1f, 0.9f), 3f);
 
-        // Draw Handle Buttons
-        DrawGizmoHandle(ptX, "X", new Color(1f, 0.3f, 0.3f, 1f));
-        DrawGizmoHandle(ptY, "Y", new Color(0.3f, 1f, 0.3f, 1f));
-        DrawGizmoHandle(ptZ, "Z", new Color(0.3f, 0.7f, 1f, 1f));
+            // Draw Handle Buttons
+            DrawGizmoHandle(ptX, "X", new Color(1f, 0.3f, 0.3f, 1f));
+            DrawGizmoHandle(ptY, "Y", new Color(0.3f, 1f, 0.3f, 1f));
+            DrawGizmoHandle(ptZ, "Z", new Color(0.3f, 0.7f, 1f, 1f));
+        }
+        else // Rotate Tool Mode
+        {
+            float ringDist = 0.55f;
+            Vector3 scrPitch = targetCamera.WorldToScreenPoint(worldPos + targetCamera.transform.right * ringDist);
+            Vector3 scrYaw = targetCamera.WorldToScreenPoint(worldPos + targetCamera.transform.up * ringDist);
+            Vector3 scrRoll = targetCamera.WorldToScreenPoint(worldPos - targetCamera.transform.right * ringDist);
 
-        // Floating name tag
-        GUI.Label(new Rect(guiOrigin.x - 120, guiOrigin.y - 40, 240, 24),
-            $"<b><color=#FFE066>▼ {sel.Name} ({sel.GetFluidName()})</color></b>");
+            Vector2 ptPitch = new Vector2(scrPitch.x, Screen.height - scrPitch.y);
+            Vector2 ptYaw = new Vector2(scrYaw.x, Screen.height - scrYaw.y);
+            Vector2 ptRoll = new Vector2(scrRoll.x, Screen.height - scrRoll.y);
+
+            // Draw circular guide arcs
+            DrawScreenCircle(guiOrigin, Vector2.Distance(guiOrigin, ptPitch), new Color(1f, 0.35f, 0.35f, 0.65f));
+            DrawScreenCircle(guiOrigin, Vector2.Distance(guiOrigin, ptYaw), new Color(0.35f, 1f, 0.35f, 0.65f));
+
+            // Draw Handle Buttons
+            DrawGizmoHandle(ptPitch, "Rx", new Color(1f, 0.3f, 0.3f, 1f));
+            DrawGizmoHandle(ptYaw, "Ry", new Color(0.3f, 1f, 0.3f, 1f));
+            DrawGizmoHandle(ptRoll, "Rz", new Color(0.3f, 0.7f, 1f, 1f));
+        }
+
+        // Floating name tag with active tool mode
+        GUI.Label(new Rect(guiOrigin.x - 140, guiOrigin.y - 42, 280, 24),
+            $"<b><color=#FFE066>▼ {sel.Name} ({sel.GetFluidName()}) [{(gizmoMode == GizmoToolMode.Move ? "MOVE" : "ROTATE")}]</color></b>");
     }
 
     private void OnGUI()
@@ -733,8 +870,19 @@ public class ShowcaseCameraController : MonoBehaviour
             GUILayout.Label($"<b>★ BOTTLE AUTHORITY: {sel.Name}</b>", GUI.skin.label);
             GUI.color = Color.white;
 
-            GUILayout.Label($"<b>Fluid:</b> {sel.GetFluidName()} | <b>Pos:</b> ({sel.Transform.position.x:F2}, {sel.Transform.position.y:F2}, {sel.Transform.position.z:F2})");
-            GUILayout.Label("<i>Controls: Left-Click & Drag to shake/move | Mouse Wheel for depth | Q/E to tilt</i>");
+            Vector3 euler = sel.Transform.eulerAngles;
+            GUILayout.Label($"<b>Fluid:</b> {sel.GetFluidName()} | <b>Pos:</b> ({sel.Transform.position.x:F2}, {sel.Transform.position.y:F2}, {sel.Transform.position.z:F2}) | <b>Rot:</b> ({euler.x:F0}°, {euler.y:F0}°, {euler.z:F0}°)");
+
+            // Gizmo Tool Mode Toggle
+            GUILayout.BeginHorizontal();
+            GUI.backgroundColor = gizmoMode == GizmoToolMode.Move ? new Color(0.2f, 0.8f, 0.4f) : Color.white;
+            if (GUILayout.Button("★ Move Tool [G]")) gizmoMode = GizmoToolMode.Move;
+            GUI.backgroundColor = gizmoMode == GizmoToolMode.Rotate ? new Color(0.2f, 0.8f, 0.4f) : Color.white;
+            if (GUILayout.Button("★ Rotate Tool [G]")) gizmoMode = GizmoToolMode.Rotate;
+            GUI.backgroundColor = Color.white;
+            GUILayout.EndHorizontal();
+
+            GUILayout.Label("<i>Controls: Left-Drag: Move/Rotate | Shift+Drag / Middle-Drag: Free 3D Rotate | Q/E: Roll | Z/C: Pitch | X: Level</i>");
 
             // Nudge Buttons along Axes
             GUILayout.BeginHorizontal();
@@ -746,12 +894,21 @@ public class ShowcaseCameraController : MonoBehaviour
             if (GUILayout.Button("Z+ (Fwd)")) sel.Transform.position += Vector3.forward * 0.15f;
             GUILayout.EndHorizontal();
 
-            // Tilt & Slosh Buttons
+            // 3D Rotation Controls
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Tilt Left (Q)")) sel.Transform.Rotate(Vector3.forward, 15f, Space.World);
-            if (GUILayout.Button("Tilt Right (E)")) sel.Transform.Rotate(Vector3.forward, -15f, Space.World);
-            if (GUILayout.Button("Level Out")) sel.Transform.rotation = Quaternion.Euler(0f, sel.Transform.eulerAngles.y, 0f);
-            if (GUILayout.Button("Impulse Slosh")) sel.TriggerSlosh();
+            if (GUILayout.Button("Pitch +15° (Z)")) sel.Transform.Rotate(Vector3.right, 15f, Space.World);
+            if (GUILayout.Button("Pitch -15° (C)")) sel.Transform.Rotate(Vector3.right, -15f, Space.World);
+            if (GUILayout.Button("Yaw +15°")) sel.Transform.Rotate(Vector3.up, 15f, Space.World);
+            if (GUILayout.Button("Yaw -15°")) sel.Transform.Rotate(Vector3.up, -15f, Space.World);
+            if (GUILayout.Button("Roll +15° (Q)")) sel.Transform.Rotate(Vector3.forward, 15f, Space.World);
+            if (GUILayout.Button("Roll -15° (E)")) sel.Transform.Rotate(Vector3.forward, -15f, Space.World);
+            GUILayout.EndHorizontal();
+
+            // Quick Orientations & Slosh
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Level Upright (0°) [X]")) sel.Transform.rotation = Quaternion.Euler(0f, sel.Transform.eulerAngles.y, 0f);
+            if (GUILayout.Button("Invert 180°")) sel.Transform.Rotate(Vector3.forward, 180f, Space.World);
+            if (GUILayout.Button("Impulse Slosh [Space]")) sel.TriggerSlosh();
             GUILayout.EndHorizontal();
 
             // Week 9 Dynamic Fill & Rheology Controls
