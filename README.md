@@ -218,9 +218,9 @@ $$\omega_n(F) = \omega_0 \cdot \sqrt{\tanh(\pi \cdot F)}$$
 Shallow fill levels exhibit longer wave periods, while deeper fill levels shift toward the asymptotic deep-water gravity slosh frequency.
 
 #### Real-Time Shader Integration:
-- The controller calculates the world-space cut plane position:
-  $$Y_{\mathrm{plane}} = Y_{\mathrm{center}} + \mathrm{lerp}(Y_{\min}, Y_{\max}, F)$$
-- Updates the shader property `_Float` in real-time via `MaterialPropertyBlock`, isolating each vessel without material cloning overhead.
+- The controller calculates the invariant container-relative cut plane position:
+  $$Y_{\mathrm{cut}} = \mathrm{lerp}(Y_{\min}, Y_{\max}, F)$$
+- Updates the shader property `_Float` in real-time via `MaterialPropertyBlock`, perfectly invariant to world space translation so raising or lowering containers never alters the fluid level.
 - Interactive hotkeys (`[` to drain, `]` to fill) and an automated harmonic pump cycle (`enableAutoFillDrainCycle`) allow live visualization of fill-level slosh modulation.
 
 ---
@@ -242,7 +242,7 @@ Shallow fill levels exhibit longer wave periods, while deeper fill levels shift 
 ## 10. Showcase Controls & Interactive In-Game Authority
 
 ### Camera Navigation Controls
-- **`[WASD]`**: Fly camera freely across the showcase.
+- **`[WASD]` / `[Arrow Keys]`**: Fly camera freely across the showcase without sticking or key collisions.
 - **`[Right-Click + Mouse Move]`**: Look around in 360° (first-person spectator view).
 - **`[Shift]`**: Sprint multiplier ($2.5\times$ speed).
 - **`[Space] / [E]`**: Fly upward.
@@ -260,8 +260,9 @@ Shallow fill levels exhibit longer wave periods, while deeper fill levels shift 
 - **Mouse Scroll Wheel**: Push or pull the dragged container closer or further in depth ($Z$-axis).
 - **Interactive 3D Move Gizmo**: Displays interactive red ($X$), green ($Y$), and blue ($Z$) move handles on the selected vessel.
 - **`[` / `]`**: Dynamically decrease or increase fluid fill level ($F$) in real-time. Watch sloshing peak at $50\%$ and suppress at $10\%$ and $95\%$.
+- **`[Alt + Arrow Keys]`**: Nudge selected bottle in 3D.
+- **`[Alt + Q/E]`**: Tilt selected bottle left or right.
 - **`[1-7]`**: Switch fluid profile (Petrol, Mercury, Motor Oil, Coolant, CryoGas, Tree Sap, Maze Gel) on the selected Week 9 vessel.
-- **`[Q]` / `[E]`**: Tilt the vessel to observe liquid leveling against walls.
 - **`[R]`**: Reset selected vessel to its original shelf plinth.
 - **`[Backspace]`**: Reset all vessels across all 3 tiers.
 

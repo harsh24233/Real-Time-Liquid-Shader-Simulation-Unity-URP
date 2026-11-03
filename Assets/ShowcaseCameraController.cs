@@ -275,12 +275,26 @@ public class ShowcaseCameraController : MonoBehaviour
             ResetAllBottles();
         }
 
-        // Camera flight movement via W, A, S, D, Space/E, C/Ctrl/Q
+        // Camera flight movement via W, A, S, D, Arrow Keys, Space/E (Up), C/Ctrl/Q (Down)
         Vector3 moveInput = Vector3.zero;
-        if (kb.wKey.isPressed) moveInput += targetCamera.transform.forward;
-        if (kb.sKey.isPressed) moveInput -= targetCamera.transform.forward;
-        if (kb.dKey.isPressed) moveInput += targetCamera.transform.right;
-        if (kb.aKey.isPressed) moveInput -= targetCamera.transform.right;
+        bool isAltHeld = kb.leftAltKey.isPressed || kb.rightAltKey.isPressed;
+
+        // If Alt is NOT held, arrow keys fly the camera along with WASD
+        if (!isAltHeld)
+        {
+            if (kb.wKey.isPressed || kb.upArrowKey.isPressed) moveInput += targetCamera.transform.forward;
+            if (kb.sKey.isPressed || kb.downArrowKey.isPressed) moveInput -= targetCamera.transform.forward;
+            if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) moveInput += targetCamera.transform.right;
+            if (kb.aKey.isPressed || kb.leftArrowKey.isPressed) moveInput -= targetCamera.transform.right;
+        }
+        else
+        {
+            if (kb.wKey.isPressed) moveInput += targetCamera.transform.forward;
+            if (kb.sKey.isPressed) moveInput -= targetCamera.transform.forward;
+            if (kb.dKey.isPressed) moveInput += targetCamera.transform.right;
+            if (kb.aKey.isPressed) moveInput -= targetCamera.transform.right;
+        }
+
         if (kb.spaceKey.isPressed || kb.eKey.isPressed) moveInput += Vector3.up;
         if (kb.leftCtrlKey.isPressed || kb.cKey.isPressed || kb.qKey.isPressed) moveInput -= Vector3.up;
 
@@ -344,54 +358,58 @@ public class ShowcaseCameraController : MonoBehaviour
         VesselEntry sel = GetSelectedVessel();
         if (sel == null || sel.Transform == null) return;
 
+        bool isAltHeld = kb.leftAltKey.isPressed || kb.rightAltKey.isPressed;
+
         // 1. Reset selected bottle with R key
         if (kb.rKey.wasPressedThisFrame)
         {
             sel.ResetToInitial();
         }
 
-        // 2. Slosh selected bottle with Space key
-        if (kb.spaceKey.wasPressedThisFrame && !kb.wKey.isPressed && !kb.sKey.isPressed && !kb.aKey.isPressed && !kb.dKey.isPressed)
+        // 2. Slosh selected bottle with Space key ONLY when Alt is held (never during camera flight)
+        if (isAltHeld && kb.spaceKey.wasPressedThisFrame)
         {
             sel.TriggerSlosh();
         }
 
-        // 3. Arrow Keys to nudge selected bottle in 3D
-        float nudgeSpeed = 2.5f * Time.deltaTime;
-        Vector3 nudge = Vector3.zero;
-        if (kb.leftArrowKey.isPressed) nudge += Vector3.left;
-        if (kb.rightArrowKey.isPressed) nudge += Vector3.right;
-        if (kb.upArrowKey.isPressed)
+        // 3. Nudge / Tilt selected bottle in 3D ONLY when Alt is held
+        if (isAltHeld)
         {
-            if (kb.leftShiftKey.isPressed) nudge += Vector3.forward;
-            else nudge += Vector3.up;
-        }
-        if (kb.downArrowKey.isPressed)
-        {
-            if (kb.leftShiftKey.isPressed) nudge += Vector3.back;
-            else nudge += Vector3.down;
-        }
-        if (kb.pageUpKey.isPressed) nudge += Vector3.forward;
-        if (kb.pageDownKey.isPressed) nudge += Vector3.back;
+            float nudgeSpeed = 3.0f * Time.deltaTime;
+            Vector3 nudge = Vector3.zero;
+            if (kb.leftArrowKey.isPressed) nudge += Vector3.left;
+            if (kb.rightArrowKey.isPressed) nudge += Vector3.right;
+            if (kb.upArrowKey.isPressed)
+            {
+                if (kb.leftShiftKey.isPressed) nudge += Vector3.forward;
+                else nudge += Vector3.up;
+            }
+            if (kb.downArrowKey.isPressed)
+            {
+                if (kb.leftShiftKey.isPressed) nudge += Vector3.back;
+                else nudge += Vector3.down;
+            }
+            if (kb.pageUpKey.isPressed) nudge += Vector3.forward;
+            if (kb.pageDownKey.isPressed) nudge += Vector3.back;
 
-        if (nudge.sqrMagnitude > 0.001f)
-        {
-            sel.Transform.position += nudge.normalized * nudgeSpeed;
-        }
+            if (nudge.sqrMagnitude > 0.001f)
+            {
+                sel.Transform.position += nudge.normalized * nudgeSpeed;
+            }
 
-        // 4. Tilt bottle with Q / E (when not flying camera)
-        if (!kb.wKey.isPressed && !kb.sKey.isPressed)
-        {
+            // Tilt bottle with Alt + Q / E
             if (kb.qKey.isPressed) sel.Transform.Rotate(Vector3.forward, 90f * Time.deltaTime, Space.World);
             if (kb.eKey.isPressed) sel.Transform.Rotate(Vector3.forward, -90f * Time.deltaTime, Space.World);
         }
 
-        // 5. Switch fluid profile with 1-5 number keys
-        if (kb.digit1Key.wasPressedThisFrame) sel.SetFluid(0); // Water
-        if (kb.digit2Key.wasPressedThisFrame) sel.SetFluid(1); // VegOil / Milk
-        if (kb.digit3Key.wasPressedThisFrame) sel.SetFluid(2); // Honey
-        if (kb.digit4Key.wasPressedThisFrame) sel.SetFluid(3); // Ketchup
-        if (kb.digit5Key.wasPressedThisFrame) sel.SetFluid(4); // Milk
+        // 4. Switch fluid profile with 1-7 number keys
+        if (kb.digit1Key.wasPressedThisFrame) sel.SetFluid(0);
+        if (kb.digit2Key.wasPressedThisFrame) sel.SetFluid(1);
+        if (kb.digit3Key.wasPressedThisFrame) sel.SetFluid(2);
+        if (kb.digit4Key.wasPressedThisFrame) sel.SetFluid(3);
+        if (kb.digit5Key.wasPressedThisFrame) sel.SetFluid(4);
+        if (kb.digit6Key.wasPressedThisFrame) sel.SetFluid(5);
+        if (kb.digit7Key.wasPressedThisFrame) sel.SetFluid(6);
 #endif
     }
 
@@ -438,6 +456,11 @@ public class ShowcaseCameraController : MonoBehaviour
                     dragOffset = hitVessel.Transform.position - planePoint;
                     return;
                 }
+            }
+            else
+            {
+                isDraggingVessel = false;
+                activeGizmoAxis = GizmoAxis.None;
             }
         }
 
@@ -587,9 +610,16 @@ public class ShowcaseCameraController : MonoBehaviour
             UpdateIndividualFocus();
         }
 
-        float speed = (currentMode == CameraViewMode.FreeFly) ? 18f : transitionSpeed;
-        targetCamera.transform.position = Vector3.Lerp(targetCamera.transform.position, targetPos, Time.deltaTime * speed);
-        targetCamera.transform.rotation = Quaternion.Slerp(targetCamera.transform.rotation, targetRot, Time.deltaTime * speed);
+        if (currentMode == CameraViewMode.FreeFly)
+        {
+            targetCamera.transform.position = Vector3.Lerp(targetCamera.transform.position, targetPos, Time.deltaTime * 32f);
+            targetCamera.transform.rotation = Quaternion.Slerp(targetCamera.transform.rotation, targetRot, Time.deltaTime * 32f);
+        }
+        else
+        {
+            targetCamera.transform.position = Vector3.Lerp(targetCamera.transform.position, targetPos, Time.deltaTime * transitionSpeed);
+            targetCamera.transform.rotation = Quaternion.Slerp(targetCamera.transform.rotation, targetRot, Time.deltaTime * transitionSpeed);
+        }
     }
 
     public void TriggerAllSlosh()

@@ -196,12 +196,20 @@ public class Week9FluidDynamicsController : MonoBehaviour
 
         if (fluidRenderer != null)
         {
-            // Auto detect vertical bounds if default
-            var bounds = fluidRenderer.localBounds;
-            if (bounds.size.y > 0.05f)
+            var filter = fluidRenderer.GetComponent<MeshFilter>();
+            if (filter != null && filter.sharedMesh != null)
             {
-                localYMin = bounds.min.y;
-                localYMax = bounds.max.y;
+                localYMin = filter.sharedMesh.bounds.min.y;
+                localYMax = filter.sharedMesh.bounds.max.y;
+            }
+            else
+            {
+                var bounds = fluidRenderer.localBounds;
+                if (bounds.size.y > 0.05f)
+                {
+                    localYMin = bounds.min.y;
+                    localYMax = bounds.max.y;
+                }
             }
         }
     }
@@ -261,21 +269,24 @@ public class Week9FluidDynamicsController : MonoBehaviour
         Vector3 currentPos = transform.position;
         Quaternion currentRot = transform.rotation;
 
-        currentVelocity = (currentPos - lastPosition) / dt;
+        Vector3 rawVelocity = (currentPos - lastPosition) / dt;
+        currentVelocity = Vector3.Lerp(currentVelocity, rawVelocity, Mathf.Clamp01(dt * 15f));
         Vector3 acceleration = (currentVelocity - previousVelocity) / dt;
+        acceleration = Vector3.ClampMagnitude(acceleration, 25f);
 
         // Angular velocity calculation
         Quaternion deltaRot = currentRot * Quaternion.Inverse(lastRotation);
         deltaRot.ToAngleAxis(out float angleDeg, out Vector3 axis);
         if (angleDeg > 180f) angleDeg -= 360f;
-        currentAngularVelocity = (axis * (angleDeg * Mathf.Deg2Rad)) / dt;
+        Vector3 rawAngVel = (axis * (angleDeg * Mathf.Deg2Rad)) / dt;
+        currentAngularVelocity = Vector3.Lerp(currentAngularVelocity, rawAngVel, Mathf.Clamp01(dt * 15f));
 
         // 4. Fill Amount Magnitude Changing Logic & Physical Dynamics Coupling
         ComputeFillAmountCoupledDynamics(acceleration, currentAngularVelocity, dt);
 
-        // 5. Update Shader Properties
-        UpdateFillCutPlane(false);
-        SendWobbleToShader(wobbleX, wobbleZ);
+        // 5. Update Shader Properties (fillCutY is local to container center, perfectly invariant to world movement)
+        float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
+        SendShaderProperties(wobbleX, wobbleZ, localFillY);
 
         lastPosition = currentPos;
         lastRotation = currentRot;
@@ -354,54 +365,44 @@ public class Week9FluidDynamicsController : MonoBehaviour
         // d2w/dt2 + 2*gamma*dw/dt + omega^2 * w = force
         float omegaSq = currentResonantFrequency * currentResonantFrequency * 4f * Mathf.PI * Mathf.PI;
         
-        // X-axis slosh
+        // Semi-implicit Euler integration (unconditionally stable for harmonic oscillators)
         float accelX = forceX - (2f * currentEffectiveDamping * wobbleVelocityX) - (omegaSq * wobbleX);
         wobbleVelocityX += accelX * dt;
         wobbleX += wobbleVelocityX * dt;
 
-        // Z-axis slosh
         float accelZ = forceZ - (2f * currentEffectiveDamping * wobbleVelocityZ) - (omegaSq * wobbleZ);
         wobbleVelocityZ += accelZ * dt;
         wobbleZ += wobbleVelocityZ * dt;
 
+        // Apply natural rest damping when container motion ceases
+        if (acceleration.sqrMagnitude < 0.0005f && currentAngularVelocity.sqrMagnitude < 0.0005f)
+        {
+            wobbleVelocityX = Mathf.Lerp(wobbleVelocityX, 0f, dt * currentEffectiveDamping);
+            wobbleVelocityZ = Mathf.Lerp(wobbleVelocityZ, 0f, dt * currentEffectiveDamping);
+            if (Mathf.Abs(wobbleX) < 0.0005f && Mathf.Abs(wobbleVelocityX) < 0.001f) { wobbleX = 0f; wobbleVelocityX = 0f; }
+            if (Mathf.Abs(wobbleZ) < 0.0005f && Mathf.Abs(wobbleVelocityZ) < 0.001f) { wobbleZ = 0f; wobbleVelocityZ = 0f; }
+        }
+
         // Clamp to physical maximum wobble angle modulated by fill envelope
-        float activeMaxLimit = maxWobbleDisplacement * Mathf.Max(0.1f, currentFillMagnitudeEnvelope);
+        float activeMaxLimit = maxWobbleDisplacement * Mathf.Max(0.08f, currentFillMagnitudeEnvelope);
         wobbleX = Mathf.Clamp(wobbleX, -activeMaxLimit, activeMaxLimit);
         wobbleZ = Mathf.Clamp(wobbleZ, -activeMaxLimit, activeMaxLimit);
     }
 
     /// <summary>
-    /// Calculates the world-space or local-space cut plane height from fillAmount and sends it to the shader.
+    /// Updates the shader cut plane using localFillY (relative to container center).
+    /// This guarantees the fluid volume stays 100% constant when moving the container up/down in world space!
     /// </summary>
     public void UpdateFillCutPlane(bool forceUpdate = false)
     {
         if (fluidRenderer == null) CacheRenderer();
         if (fluidRenderer == null) return;
 
-        // Map fillAmount [0..1] to container local vertical span [localYMin..localYMax]
         float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
-        
-        // Transform local fill position to world space Y (Shader graph cut plane uses world or local pos)
-        Vector3 worldFillPos = transform.TransformPoint(new Vector3(0f, localFillY, 0f));
-        float targetShaderFloat = worldFillPos.y;
-
-        // Apply to MaterialPropertyBlock
-        if (propBlock == null) propBlock = new MaterialPropertyBlock();
-        fluidRenderer.GetPropertyBlock(propBlock);
-        propBlock.SetFloat(FloatFillProp, targetShaderFloat);
-        fluidRenderer.SetPropertyBlock(propBlock);
-
-        // Also update material directly in editor or fallback
-        if (Application.isEditor && !Application.isPlaying)
-        {
-            if (fluidRenderer.sharedMaterial != null && fluidRenderer.sharedMaterial.HasProperty(FloatFillProp))
-            {
-                fluidRenderer.sharedMaterial.SetFloat(FloatFillProp, targetShaderFloat);
-            }
-        }
+        SendShaderProperties(wobbleX, wobbleZ, localFillY);
     }
 
-    private void SendWobbleToShader(float wx, float wz)
+    private void SendShaderProperties(float wx, float wz, float fillCutY)
     {
         if (fluidRenderer == null) return;
 
@@ -409,6 +410,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
         fluidRenderer.GetPropertyBlock(propBlock);
         propBlock.SetFloat(WobbleXProp, wx);
         propBlock.SetFloat(WobbleZProp, wz);
+        propBlock.SetFloat(FloatFillProp, fillCutY);
         fluidRenderer.SetPropertyBlock(propBlock);
 
         if (Application.isEditor && !Application.isPlaying && useSharedMaterialInEditor)
@@ -419,6 +421,8 @@ public class Week9FluidDynamicsController : MonoBehaviour
                     fluidRenderer.sharedMaterial.SetFloat(WobbleXProp, wx);
                 if (fluidRenderer.sharedMaterial.HasProperty(WobbleZProp))
                     fluidRenderer.sharedMaterial.SetFloat(WobbleZProp, wz);
+                if (fluidRenderer.sharedMaterial.HasProperty(FloatFillProp))
+                    fluidRenderer.sharedMaterial.SetFloat(FloatFillProp, fillCutY);
             }
         }
     }
@@ -449,3 +453,4 @@ public class Week9FluidDynamicsController : MonoBehaviour
     public float Density => densityKgM3;
     public float DynamicViscosity => dynamicViscosityPaS;
 }
+
