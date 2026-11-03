@@ -99,9 +99,9 @@ public class Week9FluidDynamicsController : MonoBehaviour
     [SerializeField] private bool useSharedMaterialInEditor = true;
 
     [Header("Kinematic Motion Sensitivities")]
-    [SerializeField] private float translationSensitivity = 2.5f;
-    [SerializeField] private float rotationSensitivity = 1.5f;
-    [SerializeField] private float maxWobbleDisplacement = 0.55f;
+    [SerializeField] private float translationSensitivity = 1.2f;
+    [SerializeField] private float rotationSensitivity = 0.7f;
+    [SerializeField] private float maxWobbleDisplacement = 0.45f;
 
     // Physical state variables
     private Vector3 lastPosition;
@@ -136,7 +136,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
     private float gelClingX = 0f;
     private float gelClingZ = 0f;
 
-    public bool IsGelSlumping => (fluidType == Week9FluidType.HeavyMazeGel || dynamicViscosityPaS >= 5.0f) && 
+    public bool IsGelSlumping => (fluidType == Week9FluidType.HeavyMazeGel || dynamicViscosityPaS >= 0.20f) && 
                                   (gelHesitationTimer > 0f || Vector3.Angle(gelSurfaceNormal, Vector3.up) > 0.5f);
     public float GelTiltAngle => Vector3.Angle(gelSurfaceNormal, Vector3.up);
     public string GelSlumpStatus => gelHesitationTimer > 0f ? $"Clinging (Delay {gelHesitationTimer:F2}s)" :
@@ -149,27 +149,27 @@ public class Week9FluidDynamicsController : MonoBehaviour
     private static readonly int WobbleZProp = Shader.PropertyToID("_WobbleZ");
     private static readonly int FloatFillProp = Shader.PropertyToID("_Float");
 
-    // Realistic Fluid Presets
+    // Realistic Fluid Presets (Physical natural frequencies 0.75 - 2.1 Hz for authentic container liquid mass)
     public static readonly Week9PhysicalFluidProfile ProfilePetrol =
-        new Week9PhysicalFluidProfile("Petrol (Gasoline)", 740f, 0.0006f, 3.4f, 1.4f, 32f, 18.0f, 0.90f);
+        new Week9PhysicalFluidProfile("Petrol (Gasoline)", 740f, 0.0006f, 1.85f, 1.8f, 22f, 18.0f, 0.90f);
 
     public static readonly Week9PhysicalFluidProfile ProfileMercury =
-        new Week9PhysicalFluidProfile("Liquid Mercury", 13550f, 0.0015f, 2.1f, 0.8f, 24f, 6.5f, 0.98f);
+        new Week9PhysicalFluidProfile("Liquid Mercury", 13550f, 0.0015f, 1.35f, 1.5f, 16f, 6.5f, 0.98f);
 
     public static readonly Week9PhysicalFluidProfile ProfileMotorOil =
-        new Week9PhysicalFluidProfile("Synthetic Motor Oil", 890f, 0.2500f, 2.2f, 4.2f, 22f, 12.0f, 0.80f);
+        new Week9PhysicalFluidProfile("Synthetic Motor Oil", 890f, 0.2500f, 1.25f, 4.8f, 14f, 12.0f, 0.80f);
 
     public static readonly Week9PhysicalFluidProfile ProfileCoolant =
-        new Week9PhysicalFluidProfile("Hydraulic Coolant", 1060f, 0.0035f, 3.0f, 1.8f, 28f, 15.0f, 0.85f);
+        new Week9PhysicalFluidProfile("Hydraulic Coolant", 1060f, 0.0035f, 1.75f, 2.2f, 20f, 15.0f, 0.85f);
 
     public static readonly Week9PhysicalFluidProfile ProfileCryoGas =
-        new Week9PhysicalFluidProfile("Cryogenic Liquid Gas", 500f, 0.0001f, 4.2f, 0.9f, 36f, 22.0f, 0.95f);
+        new Week9PhysicalFluidProfile("Cryogenic Liquid Gas", 500f, 0.0001f, 2.10f, 1.2f, 26f, 22.0f, 0.95f);
 
     public static readonly Week9PhysicalFluidProfile ProfileTreeSap =
-        new Week9PhysicalFluidProfile("Tree Sap Resin", 1380f, 8.5000f, 1.4f, 8.5f, 14f, 4.0f, 0.65f);
+        new Week9PhysicalFluidProfile("Tree Sap Resin", 1380f, 8.5000f, 0.90f, 9.5f, 9f, 4.0f, 0.65f);
 
     public static readonly Week9PhysicalFluidProfile ProfileHeavyGel =
-        new Week9PhysicalFluidProfile("Heavy Maze Gel", 1420f, 25.0000f, 1.1f, 12.0f, 10f, 2.5f, 0.50f);
+        new Week9PhysicalFluidProfile("Heavy Maze Gel", 1420f, 25.0000f, 0.75f, 13.5f, 7f, 2.5f, 0.50f);
 
     private void Awake()
     {
@@ -338,7 +338,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
         Quaternion currentRot = transform.rotation;
 
         Vector3 rawVelocity = (currentPos - lastPosition) / dt;
-        currentVelocity = Vector3.Lerp(currentVelocity, rawVelocity, Mathf.Clamp01(dt * 15f));
+        currentVelocity = Vector3.Lerp(currentVelocity, rawVelocity, Mathf.Clamp01(dt * 8f));
         Vector3 acceleration = (currentVelocity - previousVelocity) / dt;
         acceleration = Vector3.ClampMagnitude(acceleration, 25f);
 
@@ -347,7 +347,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
         deltaRot.ToAngleAxis(out float angleDeg, out Vector3 axis);
         if (angleDeg > 180f) angleDeg -= 360f;
         Vector3 rawAngVel = (axis * (angleDeg * Mathf.Deg2Rad)) / dt;
-        currentAngularVelocity = Vector3.Lerp(currentAngularVelocity, rawAngVel, Mathf.Clamp01(dt * 15f));
+        currentAngularVelocity = Vector3.Lerp(currentAngularVelocity, rawAngVel, Mathf.Clamp01(dt * 8f));
 
         // 4. Fill Amount Magnitude Changing Logic & Physical Dynamics Coupling
         ComputeFillAmountCoupledDynamics(acceleration, currentAngularVelocity, dt);
@@ -482,15 +482,16 @@ public class Week9FluidDynamicsController : MonoBehaviour
     }
 
     /// <summary>
-    /// Implements thixotropic Bingham-plastic creep and delayed gravitational slump for heavy viscous gel.
-    /// When rotated, heavy gel clings to container chamber walls (holding its tilted orientation for a yield delay),
-    /// then shears and slumps downward to horizontal level under gravitational stress over several seconds.
+    /// Implements physical rheological creep and viscous gravitational slump for thick fluids.
+    /// - Heavy Maze Gel (mu = 25 Pa*s): Bingham-plastic yield stress holds orientation for gelYieldDelay, then creeps to level.
+    /// - Tree Sap Resin (mu = 8.5 Pa*s): Clings to internal branch geometry before slow viscous flow.
+    /// - Synthetic Motor Oil (mu = 0.25 Pa*s): Pours and levels with natural viscous lag (0.65s), avoiding instant snap.
     /// </summary>
     private void UpdateViscousCreepSlump(Quaternion deltaRot, float dt)
     {
-        bool isHeavyGel = enableViscousCreepSlump && (fluidType == Week9FluidType.HeavyMazeGel || dynamicViscosityPaS >= 5.0f);
+        bool isViscous = enableViscousCreepSlump && (fluidType == Week9FluidType.HeavyMazeGel || dynamicViscosityPaS >= 0.20f);
 
-        if (!isHeavyGel)
+        if (!isViscous)
         {
             gelSurfaceNormal = Vector3.up;
             gelHesitationTimer = 0f;
@@ -499,17 +500,40 @@ public class Week9FluidDynamicsController : MonoBehaviour
             return;
         }
 
-        // 1. Container Rotation: Gel clings to chamber walls and rotates WITH the container
+        // Calibrate yield delay and slump duration based on fluid mechanics
+        float effectiveYieldDelay = 0f;
+        float effectiveSlumpDuration = 0.65f;
+
+        if (fluidType == Week9FluidType.HeavyMazeGel || dynamicViscosityPaS >= 15f)
+        {
+            effectiveYieldDelay = gelYieldDelay; // 0.55s
+            effectiveSlumpDuration = gelSlumpDuration; // 2.4s
+        }
+        else if (fluidType == Week9FluidType.TreeSapResin || dynamicViscosityPaS >= 5.0f)
+        {
+            effectiveYieldDelay = 0.35f;
+            effectiveSlumpDuration = 1.6f;
+        }
+        else // Synthetic Motor Oil (mu = 0.25)
+        {
+            effectiveYieldDelay = 0f; // Continuous smooth viscous flow, no solid yield point
+            effectiveSlumpDuration = 0.65f; // Gentle viscous relaxation to level
+        }
+
+        // 1. Container Rotation: Fluid clings to container walls and rotates WITH the container
         deltaRot.ToAngleAxis(out float angleDeg, out Vector3 axis);
         if (angleDeg > 180f) angleDeg -= 360f;
         if (Mathf.Abs(angleDeg) > 0.02f)
         {
-            // Rotate the gel surface normal with container orientation
+            // Rotate the fluid surface normal with container orientation
             gelSurfaceNormal = deltaRot * gelSurfaceNormal;
             gelSurfaceNormal.Normalize();
 
             // Refresh hesitation delay timer (heavy gel yield stress resists immediate flow)
-            gelHesitationTimer = gelYieldDelay;
+            if (effectiveYieldDelay > 0f)
+            {
+                gelHesitationTimer = effectiveYieldDelay;
+            }
         }
 
         // 2. Yield Stress & Gravitational Slump:
@@ -527,7 +551,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
                 // Non-Newtonian thixotropic slump rate:
                 // Starts slow (creeping), accelerates under continuous shear stress, and softly settles
                 float shearRate = Mathf.Pow(sinTheta, 1.2f);
-                float slumpSpeedDeg = (90f / Mathf.Max(0.5f, gelSlumpDuration)) * shearRate;
+                float slumpSpeedDeg = (90f / Mathf.Max(0.2f, effectiveSlumpDuration)) * shearRate;
                 slumpSpeedDeg = Mathf.Max(slumpSpeedDeg, 8f); // Minimum creep rate so it doesn't stall indefinitely
 
                 gelSurfaceNormal = Vector3.RotateTowards(gelSurfaceNormal, Vector3.up, slumpSpeedDeg * Mathf.Deg2Rad * dt, 0f);
@@ -546,7 +570,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
             gelSurfaceNormal.Normalize();
         }
 
-        // 3. Convert Gel Surface Normal to Shader Wobble Offsets
+        // 3. Convert Surface Normal to Shader Wobble Offsets
         // Plane normal in shader: N = ( _WobbleZ, 1, -_WobbleX )
         float safeNy = Mathf.Max(gelSurfaceNormal.y, 0.15f);
         gelClingZ = Mathf.Clamp(gelSurfaceNormal.x / safeNy, -1.25f, 1.25f);
@@ -591,7 +615,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
                          Mathf.Abs(wobbleZ) > 0.0002f || Mathf.Abs(wobbleVelocityZ) > 0.0005f;
 
         Vector3 rawVelocity = (currentPos - lastPosition) / dt;
-        currentVelocity = Vector3.Lerp(currentVelocity, rawVelocity, Mathf.Clamp01(dt * 15f));
+        currentVelocity = Vector3.Lerp(currentVelocity, rawVelocity, Mathf.Clamp01(dt * 8f));
         Vector3 acceleration = (currentVelocity - previousVelocity) / dt;
         acceleration = Vector3.ClampMagnitude(acceleration, 25f);
 
@@ -599,7 +623,7 @@ public class Week9FluidDynamicsController : MonoBehaviour
         deltaRot.ToAngleAxis(out float angleDeg, out Vector3 axis);
         if (angleDeg > 180f) angleDeg -= 360f;
         Vector3 rawAngVel = (axis * (angleDeg * Mathf.Deg2Rad)) / dt;
-        currentAngularVelocity = Vector3.Lerp(currentAngularVelocity, rawAngVel, Mathf.Clamp01(dt * 15f));
+        currentAngularVelocity = Vector3.Lerp(currentAngularVelocity, rawAngVel, Mathf.Clamp01(dt * 8f));
 
         ComputeFillAmountCoupledDynamics(acceleration, currentAngularVelocity, dt);
         UpdateViscousCreepSlump(deltaRot, dt);

@@ -37,17 +37,17 @@ $$\frac{d^2 \theta}{dt^2} + 2\zeta\omega_n \frac{d\theta}{dt} + \omega_n^2 \thet
 
 | Fluid | Density ($\mathrm{kg/m}^3$) | Viscosity ($\mathrm{Pa}\cdot\mathrm{s}$) | Wobble Frequency | Decay Duration | Characteristics |
 |---|---|---|---|---|---|
-| **Cryogenic Gas** | $500$ | $0.0001$ | $4.2\ \mathrm{Hz}$ | Ultra-fast ripples | Near-zero drag, hyperactive surface sloshing |
-| **Petrol (Gasoline)** | $740$ | $0.0006$ | $3.4\ \mathrm{Hz}$ | Fast oscillatory | Low density, rapid slosh waves, sharp meniscus |
-| **Water** | $1000$ | $0.0010$ | $3.0\ \mathrm{Hz}$ | $1.5 - 2.5\ \mathrm{s}$ | Low viscosity, underdamped periodic oscillations |
-| **Hydraulic Coolant** | $1060$ | $0.0035$ | $3.0\ \mathrm{Hz}$ | Moderate decay | Aqueous circulating hydraulic surge dynamics |
-| **Synthetic Motor Oil**| $890$ | $0.2500$ | $2.2\ \mathrm{Hz}$ | Smooth laminar | Viscous boundary damping, laminar swirl |
-| **Vegetable Oil** | $915$ | $0.0500$ | $2.2\ \mathrm{Hz}$ | $0.8 - 1.2\ \mathrm{s}$ | Moderate viscosity, smooth laminar damping |
-| **Tree Sap Resin** | $1380$ | $8.5000$ | $1.4\ \mathrm{Hz}$ | Heavy overdamping| High boundary wall drag, thick creeping flow |
-| **Honey** | $1420$ | $10.000$ | $1.2\ \mathrm{Hz}$ | $0.3 - 0.5\ \mathrm{s}$ | High viscosity, overdamped sluggish response |
-| **Heavy Maze Gel** | $1420$ | $25.000$ | $1.1\ \mathrm{Hz}$ | Severe overdamping| Non-linear dissipation across internal baffle slots |
-| **Ketchup** | $1250$ | $50.000$ | $0.8\ \mathrm{Hz}$ | Rapid arrest | Non-Newtonian thixotropic paste, high resistance |
-| **Liquid Mercury** | $13550$ | $0.0015$ | $2.1\ \mathrm{Hz}$ | Heavy momentum | Extreme mass density, massive inertial resistance |
+| **Cryogenic Gas** | $500$ | $0.0001$ | $2.10\ \mathrm{Hz}$ | $2.8\ \mathrm{s}$ | Low density, rapid slosh waves, sharp meniscus |
+| **Petrol (Gasoline)** | $740$ | $0.0006$ | $1.85\ \mathrm{Hz}$ | $2.4\ \mathrm{s}$ | Fast oscillatory waves, natural fluid sloshing |
+| **Hydraulic Coolant** | $1060$ | $0.0035$ | $1.75\ \mathrm{Hz}$ | $2.2\ \mathrm{s}$ | Aqueous circulating hydraulic surge dynamics |
+| **Water** | $1000$ | $0.0010$ | $1.70\ \mathrm{Hz}$ | $2.4\ \mathrm{s}$ | Low viscosity, underdamped periodic oscillations |
+| **Vegetable Oil** | $915$ | $0.0500$ | $1.30\ \mathrm{Hz}$ | $1.6\ \mathrm{s}$ | Moderate viscosity, smooth laminar damping |
+| **Synthetic Motor Oil**| $890$ | $0.2500$ | $1.25\ \mathrm{Hz}$ | $1.8\ \mathrm{s}$ | Viscous boundary damping, laminar rotational lag ($0.65\ \mathrm{s}$) |
+| **Liquid Mercury** | $13550$ | $0.0015$ | $1.35\ \mathrm{Hz}$ | $4.5\ \mathrm{s}$ | Heavy momentum, massive inertial resistance, slow pendulum cadence |
+| **Tree Sap Resin** | $1380$ | $8.5000$ | $0.90\ \mathrm{Hz}$ | $1.2\ \mathrm{s}$ | Heavy overdamping, wall adhesion, creeping flow slump ($1.6\ \mathrm{s}$) |
+| **Honey** | $1420$ | $10.000$ | $0.85\ \mathrm{Hz}$ | $0.9\ \mathrm{s}$ | High viscosity, overdamped sluggish response |
+| **Heavy Maze Gel** | $1420$ | $25.000$ | $0.75\ \mathrm{Hz}$ | $0.8\ \mathrm{s}$ | Bingham-plastic yield delay ($0.55\ \mathrm{s}$), gravitational slump ($2.4\ \mathrm{s}$) |
+| **Ketchup** | $1250$ | $50.000$ | $0.65\ \mathrm{Hz}$ | $0.6\ \mathrm{s}$ | Non-Newtonian thixotropic paste, rapid boundary arrest |
 
 ---
 

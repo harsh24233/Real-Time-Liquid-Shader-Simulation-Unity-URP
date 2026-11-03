@@ -937,7 +937,7 @@ public class ShowcaseCameraController : MonoBehaviour
 
                 if (sel.Week9Sim.IsGelSlumping)
                 {
-                    GUILayout.Label($"<color=#FFAA55>★ Heavy Gel Rheology: <b>{sel.Week9Sim.GelSlumpStatus}</b></color>");
+                    GUILayout.Label($"<color=#FFAA55>★ Viscous Fluid Rheology: <b>{sel.Week9Sim.GelSlumpStatus}</b></color>");
                 }
 
                 GUILayout.BeginHorizontal();

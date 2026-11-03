@@ -70,19 +70,19 @@ public class ViscousLiquidWobble : MonoBehaviour
 
     [Header("Current Wobble Dynamics")]
     [Range(0.05f, 1.5f)]
-    [SerializeField] private float maxWobble = 0.65f;
+    [SerializeField] private float maxWobble = 0.55f;
 
     [Range(0.2f, 8f)]
-    [SerializeField] private float wobbleFrequency = 3.2f;
+    [SerializeField] private float wobbleFrequency = 1.7f;
 
     [Range(0.1f, 5f)]
-    [SerializeField] private float decayDuration = 2.2f;
+    [SerializeField] private float decayDuration = 2.4f;
 
     [Range(0.1f, 5f)]
-    [SerializeField] private float moveSensitivity = 1.8f;
+    [SerializeField] private float moveSensitivity = 1.2f;
 
     [Range(0.1f, 5f)]
-    [SerializeField] private float rotateSensitivity = 1.0f;
+    [SerializeField] private float rotateSensitivity = 0.75f;
 
     [Header("Interactive Controls (Play Mode)")]
     [SerializeField] private bool enableKeyboardControls = false;
@@ -118,19 +118,19 @@ public class ViscousLiquidWobble : MonoBehaviour
 #endif
 
     public static readonly FluidPhysicsProfile WaterProfile =
-        new FluidPhysicsProfile("Water", 1000f, 0.001f, 3.2f, 2.2f, 0.65f, 1.8f, 1.0f);
+        new FluidPhysicsProfile("Water", 1000f, 0.001f, 1.70f, 2.4f, 0.55f, 1.2f, 0.75f);
 
     public static readonly FluidPhysicsProfile MilkProfile =
-        new FluidPhysicsProfile("Milk", 1030f, 0.003f, 3.0f, 1.8f, 0.60f, 1.6f, 0.9f);
+        new FluidPhysicsProfile("Milk", 1030f, 0.003f, 1.60f, 2.2f, 0.50f, 1.1f, 0.70f);
 
     public static readonly FluidPhysicsProfile VegOilProfile =
-        new FluidPhysicsProfile("Vegetable Oil", 920f, 0.05f, 2.2f, 1.3f, 0.45f, 1.2f, 0.6f);
+        new FluidPhysicsProfile("Vegetable Oil", 920f, 0.05f, 1.30f, 1.6f, 0.40f, 0.85f, 0.55f);
 
     public static readonly FluidPhysicsProfile HoneyProfile =
-        new FluidPhysicsProfile("Honey", 1420f, 10.0f, 1.2f, 0.5f, 0.30f, 0.7f, 0.35f);
+        new FluidPhysicsProfile("Honey", 1420f, 10.0f, 0.85f, 0.9f, 0.28f, 0.55f, 0.35f);
 
     public static readonly FluidPhysicsProfile KetchupProfile =
-        new FluidPhysicsProfile("Ketchup", 1150f, 50.0f, 0.75f, 0.3f, 0.20f, 0.4f, 0.2f);
+        new FluidPhysicsProfile("Ketchup", 1150f, 50.0f, 0.65f, 0.6f, 0.20f, 0.40f, 0.20f);
 
     private void Awake()
     {
@@ -482,7 +482,7 @@ public class ViscousLiquidWobble : MonoBehaviour
             ? (axis * (angleDeg * Mathf.Deg2Rad / dt))
             : Vector3.zero;
 
-        float filterWeight = Mathf.Clamp01(dt * 20f);
+        float filterWeight = Mathf.Clamp01(dt * 10f);
         smoothedVelocity = Vector3.Lerp(smoothedVelocity, rawVelocity, filterWeight);
         smoothedAngularVelocity = Vector3.Lerp(smoothedAngularVelocity, rawAngularVelocity, filterWeight);
 

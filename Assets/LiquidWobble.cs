@@ -23,19 +23,19 @@ public class LiquidWobble : MonoBehaviour
 
     [Tooltip("Oscillation frequency of the wobble sine wave.")]
     [Range(0.5f, 10f)]
-    [SerializeField] private float wobbleFrequency = 2.5f;
+    [SerializeField] private float wobbleFrequency = 1.55f;
 
     [Tooltip("Decay time in seconds to settle back to zero.")]
     [Range(0.2f, 5f)]
-    [SerializeField] private float decayDuration = 1.5f;
+    [SerializeField] private float decayDuration = 2.0f;
 
     [Tooltip("Sensitivity to translational movement velocity.")]
     [Range(0.1f, 5f)]
-    [SerializeField] private float moveSensitivity = 1.5f;
+    [SerializeField] private float moveSensitivity = 1.2f;
 
     [Tooltip("Sensitivity to rotational angular velocity.")]
     [Range(0.1f, 5f)]
-    [SerializeField] private float rotateSensitivity = 0.8f;
+    [SerializeField] private float rotateSensitivity = 0.75f;
 
     [Header("Interactive Testing (Play Mode)")]
     [Tooltip("Allow moving the bottle using arrow keys in Play Mode (disabled by default so WASD controls player camera).")]
@@ -391,7 +391,7 @@ public class LiquidWobble : MonoBehaviour
             ? (axis * (angleDeg * Mathf.Deg2Rad / dt))
             : Vector3.zero;
 
-        float filterWeight = Mathf.Clamp01(dt * 20f);
+        float filterWeight = Mathf.Clamp01(dt * 10f);
         smoothedVelocity = Vector3.Lerp(smoothedVelocity, rawVelocity, filterWeight);
         smoothedAngularVelocity = Vector3.Lerp(smoothedAngularVelocity, rawAngularVelocity, filterWeight);
 

@@ -2411,10 +2411,10 @@ MonoBehaviour:
   bottleTransform: {fileID: 1518469461}
   liquidRenderer: {fileID: 1861061744}
   maxWobble: 0.35
-  wobbleFrequency: 2.2
-  decayDuration: 2.5
-  moveSensitivity: 1.5
-  rotateSensitivity: 1.5
+  wobbleFrequency: 1.55
+  decayDuration: 2.2
+  moveSensitivity: 1.2
+  rotateSensitivity: 0.75
   enableKeyboardControls: 0
   enableMouseDrag: 1
   moveSpeed: 3

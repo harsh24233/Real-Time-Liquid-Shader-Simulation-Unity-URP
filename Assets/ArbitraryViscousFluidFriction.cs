@@ -131,19 +131,19 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
 
     [Header("5. Dynamic Slosh Response")]
     [Range(0.1f, 1.5f)]
-    [SerializeField] private float maxWobble = 0.65f;
+    [SerializeField] private float maxWobble = 0.55f;
 
     [Range(0.2f, 8f)]
-    [SerializeField] private float currentFrequency = 3.0f;
+    [SerializeField] private float currentFrequency = 1.75f;
 
     [Range(0.1f, 6f)]
-    [SerializeField] private float decayDuration = 2.0f;
+    [SerializeField] private float decayDuration = 2.2f;
 
     [Range(0.1f, 5f)]
-    [SerializeField] private float moveSensitivity = 1.8f;
+    [SerializeField] private float moveSensitivity = 1.2f;
 
     [Range(0.1f, 5f)]
-    [SerializeField] private float rotateSensitivity = 1.0f;
+    [SerializeField] private float rotateSensitivity = 0.75f;
 
     [Header("6. Real-Time Telemetry (Read-Only)")]
     [SerializeField] private float currentSloshAngleX = 0f;
@@ -190,21 +190,21 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
     private double lastEditorTime = 0;
 #endif
 
-    // Pre-calibrated Physical Profiles based on Real-World Fluid Mechanics
+    // Pre-calibrated Physical Profiles based on Real-World Fluid Mechanics (Natural Frequencies 0.65 - 1.75 Hz)
     public static readonly PhysicalFluidProfile WaterProfile =
-        new PhysicalFluidProfile("Water", 1000f, 0.001f, 3.4f, 1.8f, 0.65f, 0.15f, 1.8f, 1.0f);
+        new PhysicalFluidProfile("Water", 1000f, 0.001f, 1.75f, 2.2f, 0.55f, 0.15f, 1.2f, 0.75f);
 
     public static readonly PhysicalFluidProfile VegOilProfile =
-        new PhysicalFluidProfile("Vegetable Oil", 920f, 0.050f, 2.3f, 1.2f, 0.45f, 0.40f, 1.3f, 0.65f);
+        new PhysicalFluidProfile("Vegetable Oil", 920f, 0.050f, 1.30f, 3.2f, 0.40f, 0.40f, 0.85f, 0.55f);
 
     public static readonly PhysicalFluidProfile HoneyProfile =
-        new PhysicalFluidProfile("Honey", 1420f, 10.0f, 1.1f, 0.45f, 0.30f, 0.85f, 0.7f, 0.35f);
+        new PhysicalFluidProfile("Honey", 1420f, 10.0f, 0.85f, 6.5f, 0.28f, 0.85f, 0.55f, 0.35f);
 
     public static readonly PhysicalFluidProfile KetchupProfile =
-        new PhysicalFluidProfile("Ketchup", 1150f, 50.0f, 0.70f, 0.22f, 0.20f, 0.95f, 0.4f, 0.20f);
+        new PhysicalFluidProfile("Ketchup", 1150f, 50.0f, 0.65f, 9.0f, 0.20f, 0.95f, 0.40f, 0.20f);
 
     public static readonly PhysicalFluidProfile MilkProfile =
-        new PhysicalFluidProfile("Milk", 1030f, 0.003f, 3.1f, 1.6f, 0.60f, 0.22f, 1.6f, 0.90f);
+        new PhysicalFluidProfile("Milk", 1030f, 0.003f, 1.65f, 2.4f, 0.50f, 0.22f, 1.1f, 0.70f);
 
     private void Awake()
     {
@@ -659,7 +659,7 @@ public class ArbitraryViscousFluidFriction : MonoBehaviour
             ? (axis * (angleDeg * Mathf.Deg2Rad / dt))
             : Vector3.zero;
 
-        float filterWeight = Mathf.Clamp01(dt * 20f);
+        float filterWeight = Mathf.Clamp01(dt * 10f);
         smoothedVelocity = Vector3.Lerp(smoothedVelocity, rawVelocity, filterWeight);
         smoothedAngularVelocity = Vector3.Lerp(smoothedAngularVelocity, rawAngularVelocity, filterWeight);
 
