@@ -15,7 +15,8 @@ public class ShowcaseCameraController : MonoBehaviour
     public enum CameraViewMode
     {
         TieredOverview,       // Frames both the front 12-object line and back 5-object line
-        Week2_ArbitraryLine,  // Frames the 12 new arbitrary geometry containers up close
+        Week9_RealisticLine,  // Frames the 7 new Week 9 realistic structures up close
+        Week2_ArbitraryLine,  // Frames the 12 arbitrary geometry containers up close
         Week1_OriginalLine,   // Frames the 5 original containers
         IndividualVesselFocus,// Centers closely on a single selected vessel
         FreeFly               // Full WASD + Mouse Look spectator navigation
@@ -33,10 +34,12 @@ public class ShowcaseCameraController : MonoBehaviour
         public ArbitraryViscousFluidFriction ArbitrarySim;
         public ViscousLiquidWobble ViscousSim;
         public LiquidWobble LiquidSim;
+        public Week9FluidDynamicsController Week9Sim;
         public Collider Collider;
 
         public void TriggerSlosh()
         {
+            if (Week9Sim != null) Week9Sim.transform.Rotate(Vector3.forward, 12f, Space.World);
             if (ArbitrarySim != null) ArbitrarySim.TriggerImpulseSlosh();
             if (ViscousSim != null) ViscousSim.TestSlosh();
             if (LiquidSim != null) LiquidSim.TestSlosh();
@@ -44,6 +47,7 @@ public class ShowcaseCameraController : MonoBehaviour
 
         public void SetFluid(int idx)
         {
+            if (Week9Sim != null) Week9Sim.ApplyFluidPreset((Week9FluidType)Mathf.Clamp(idx, 0, 6));
             if (ArbitrarySim != null) ArbitrarySim.SetFluid((FluidSimType)Mathf.Clamp(idx, 0, 4));
             if (ViscousSim != null) ViscousSim.SetFluidType((FluidDensityType)Mathf.Clamp(idx, 0, 4));
         }
@@ -59,6 +63,7 @@ public class ShowcaseCameraController : MonoBehaviour
 
         public string GetFluidName()
         {
+            if (Week9Sim != null) return Week9Sim.FluidType.ToString();
             if (ArbitrarySim != null) return ArbitrarySim.FluidType.ToString();
             if (ViscousSim != null) return ViscousSim.FluidType.ToString();
             if (LiquidSim != null) return "Water";
@@ -77,8 +82,11 @@ public class ShowcaseCameraController : MonoBehaviour
     [SerializeField] private float lookSensitivity = 0.15f;
 
     [Header("Target Positions")]
-    [SerializeField] private Vector3 overviewPos = new Vector3(0f, 1.5f, -8.8f);
-    [SerializeField] private Vector3 overviewRot = new Vector3(8f, 0f, 0f);
+    [SerializeField] private Vector3 overviewPos = new Vector3(0f, 1.6f, -9.0f);
+    [SerializeField] private Vector3 overviewRot = new Vector3(9f, 0f, 0f);
+
+    [SerializeField] private Vector3 week9LinePos = new Vector3(0f, 0.45f, -4.6f);
+    [SerializeField] private Vector3 week9LineRot = new Vector3(4f, 0f, 0f);
 
     [SerializeField] private Vector3 week2LinePos = new Vector3(0f, 0.85f, -6.8f);
     [SerializeField] private Vector3 week2LineRot = new Vector3(5f, 0f, 0f);
@@ -106,7 +114,7 @@ public class ShowcaseCameraController : MonoBehaviour
 
     // Texture for OnGUI line drawing
     private static Texture2D lineTex;
-    private Rect hudRect = new Rect(16, 16, 460, 490);
+    private Rect hudRect = new Rect(16, 16, 500, 570);
 
     private void Awake()
     {
@@ -126,27 +134,35 @@ public class ShowcaseCameraController : MonoBehaviour
     {
         allVessels.Clear();
 
-        // 1. Find Week 2 arbitrary geometry vessels
+        // 1. Find Week 9 realistic dynamics structures
+        var week9List = FindObjectsByType<Week9FluidDynamicsController>();
+        System.Array.Sort(week9List, (a, b) => a.transform.position.x.CompareTo(b.transform.position.x));
+        foreach (var v in week9List)
+        {
+            if (v != null) RegisterVessel(v.name, v.transform, null, null, null, v);
+        }
+
+        // 2. Find Week 8 arbitrary geometry vessels
         var week2List = FindObjectsByType<ArbitraryViscousFluidFriction>();
         System.Array.Sort(week2List, (a, b) => a.transform.position.x.CompareTo(b.transform.position.x));
         foreach (var v in week2List)
         {
-            if (v != null) RegisterVessel(v.name, v.transform, v, null, null);
+            if (v != null) RegisterVessel(v.name, v.transform, v, null, null, null);
         }
 
-        // 2. Find Week 1 containers
+        // 3. Find Week 7 baseline containers
         var week1List = FindObjectsByType<ViscousLiquidWobble>();
         System.Array.Sort(week1List, (a, b) => a.transform.position.x.CompareTo(b.transform.position.x));
         foreach (var v in week1List)
         {
-            if (v != null) RegisterVessel(v.name, v.transform, null, v, null);
+            if (v != null) RegisterVessel(v.name, v.transform, null, v, null, null);
         }
 
-        // 3. Find LiquidWobble original bottles
+        // 4. Find LiquidWobble original bottles
         var origList = FindObjectsByType<LiquidWobble>();
         foreach (var v in origList)
         {
-            if (v != null) RegisterVessel(v.name, v.transform, null, null, v);
+            if (v != null) RegisterVessel(v.name, v.transform, null, null, v, null);
         }
 
         // Maintain week2Vessels serialized list for backwards compatibility
@@ -154,7 +170,7 @@ public class ShowcaseCameraController : MonoBehaviour
         week2Vessels.AddRange(week2List);
     }
 
-    private void RegisterVessel(string name, Transform t, ArbitraryViscousFluidFriction arb, ViscousLiquidWobble visc, LiquidWobble liq)
+    private void RegisterVessel(string name, Transform t, ArbitraryViscousFluidFriction arb, ViscousLiquidWobble visc, LiquidWobble liq, Week9FluidDynamicsController week9 = null)
     {
         if (t == null) return;
         if (allVessels.Exists(e => e.Transform == t)) return;
@@ -189,6 +205,7 @@ public class ShowcaseCameraController : MonoBehaviour
             ArbitrarySim = arb,
             ViscousSim = visc,
             LiquidSim = liq,
+            Week9Sim = week9,
             Collider = col
         };
         allVessels.Add(entry);
@@ -238,6 +255,7 @@ public class ShowcaseCameraController : MonoBehaviour
         if (kb.f3Key.wasPressedThisFrame) SetViewMode(CameraViewMode.Week1_OriginalLine);
         if (kb.f4Key.wasPressedThisFrame) SetViewMode(CameraViewMode.IndividualVesselFocus);
         if (kb.f5Key.wasPressedThisFrame) SetViewMode(CameraViewMode.FreeFly);
+        if (kb.f6Key.wasPressedThisFrame) SetViewMode(CameraViewMode.Week9_RealisticLine);
 
         // Toggle HUD
         if (kb.hKey.wasPressedThisFrame) showHUD = !showHUD;
@@ -505,6 +523,10 @@ public class ShowcaseCameraController : MonoBehaviour
                 targetPos = overviewPos;
                 targetRot = Quaternion.Euler(overviewRot);
                 break;
+            case CameraViewMode.Week9_RealisticLine:
+                targetPos = week9LinePos;
+                targetRot = Quaternion.Euler(week9LineRot);
+                break;
             case CameraViewMode.Week2_ArbitraryLine:
                 targetPos = week2LinePos;
                 targetRot = Quaternion.Euler(week2LineRot);
@@ -666,6 +688,7 @@ public class ShowcaseCameraController : MonoBehaviour
         // Camera Preset Buttons
         GUILayout.BeginHorizontal();
         if (GUILayout.Button("Overview [F1]")) SetViewMode(CameraViewMode.TieredOverview);
+        if (GUILayout.Button("Week 9 [F6]")) SetViewMode(CameraViewMode.Week9_RealisticLine);
         if (GUILayout.Button("12-Vessels [F2]")) SetViewMode(CameraViewMode.Week2_ArbitraryLine);
         if (GUILayout.Button("5-Bottles [F3]")) SetViewMode(CameraViewMode.Week1_OriginalLine);
         if (GUILayout.Button("Free-Fly [F5]")) SetViewMode(CameraViewMode.FreeFly);
@@ -701,15 +724,60 @@ public class ShowcaseCameraController : MonoBehaviour
             if (GUILayout.Button("Impulse Slosh")) sel.TriggerSlosh();
             GUILayout.EndHorizontal();
 
-            // Fluid Profile Switcher
-            GUILayout.Label("<b>Switch Fluid Profile on Selected Bottle:</b>");
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Water")) sel.SetFluid(0);
-            if (GUILayout.Button("VegOil")) sel.SetFluid(1);
-            if (GUILayout.Button("Honey")) sel.SetFluid(2);
-            if (GUILayout.Button("Ketchup")) sel.SetFluid(3);
-            if (GUILayout.Button("Milk")) sel.SetFluid(4);
-            GUILayout.EndHorizontal();
+            // Week 9 Dynamic Fill & Rheology Controls
+            if (sel.Week9Sim != null)
+            {
+                GUILayout.Space(3);
+                GUI.color = new Color(0.4f, 1f, 0.85f);
+                GUILayout.Label("<b>WEEK 9 DYNAMIC FILL & PHYSICAL RHEOLOGY:</b>", GUI.skin.label);
+                GUI.color = Color.white;
+
+                GUILayout.Label($"\u03c1: <b>{sel.Week9Sim.Density:F0} kg/m³</b> | \u03bc: <b>{sel.Week9Sim.DynamicViscosity:F4} Pa·s</b> | \u03bd: <b>{sel.Week9Sim.KinematicViscosity:E2} m²/s</b> | \u03c9: <b>{sel.Week9Sim.CurrentResonantFrequency:F2} Hz</b>");
+
+                // Fill Amount Slider & Envelope
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"Fill: <b>{sel.Week9Sim.fillAmount * 100f:F0}%</b> ([\\] keys)", GUILayout.Width(155));
+                float prevFill = sel.Week9Sim.fillAmount;
+                sel.Week9Sim.fillAmount = GUILayout.HorizontalSlider(sel.Week9Sim.fillAmount, 0.02f, 0.98f);
+                if (Mathf.Abs(sel.Week9Sim.fillAmount - prevFill) > 0.001f)
+                {
+                    sel.Week9Sim.UpdateFillCutPlane(false);
+                }
+                GUILayout.EndHorizontal();
+
+                GUILayout.Label($"Slosh Factor \u03a8(F) = 4F(1-F): <b>{sel.Week9Sim.CurrentFillMagnitudeEnvelope:F2}</b>" +
+                    (sel.Week9Sim.fillAmount >= 0.40f && sel.Week9Sim.fillAmount <= 0.60f ? " <color=#FFE066>★ PEAK SLOSH</color>" : " (Suppressed)"));
+
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("10% Shallow")) { sel.Week9Sim.fillAmount = 0.10f; sel.Week9Sim.UpdateFillCutPlane(false); }
+                if (GUILayout.Button("50% Peak Resonance")) { sel.Week9Sim.fillAmount = 0.50f; sel.Week9Sim.UpdateFillCutPlane(false); }
+                if (GUILayout.Button("95% Choked Slosh")) { sel.Week9Sim.fillAmount = 0.95f; sel.Week9Sim.UpdateFillCutPlane(false); }
+                sel.Week9Sim.enableAutoFillDrainCycle = GUILayout.Toggle(sel.Week9Sim.enableAutoFillDrainCycle, "Auto Cycle");
+                GUILayout.EndHorizontal();
+
+                GUILayout.Label("<b>Switch Realistic Fluid Preset:</b>");
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Petrol")) sel.SetFluid(0);
+                if (GUILayout.Button("Mercury")) sel.SetFluid(1);
+                if (GUILayout.Button("MotorOil")) sel.SetFluid(2);
+                if (GUILayout.Button("Coolant")) sel.SetFluid(3);
+                if (GUILayout.Button("CryoGas")) sel.SetFluid(4);
+                if (GUILayout.Button("TreeSap")) sel.SetFluid(5);
+                if (GUILayout.Button("MazeGel")) sel.SetFluid(6);
+                GUILayout.EndHorizontal();
+            }
+            else
+            {
+                // Fluid Profile Switcher for Week 7/8
+                GUILayout.Label("<b>Switch Fluid Profile on Selected Bottle:</b>");
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Water")) sel.SetFluid(0);
+                if (GUILayout.Button("VegOil")) sel.SetFluid(1);
+                if (GUILayout.Button("Honey")) sel.SetFluid(2);
+                if (GUILayout.Button("Ketchup")) sel.SetFluid(3);
+                if (GUILayout.Button("Milk")) sel.SetFluid(4);
+                GUILayout.EndHorizontal();
+            }
 
             // Reset & Focus
             GUILayout.BeginHorizontal();

@@ -1,46 +1,53 @@
-# Real-Time Viscous Liquid Wobble Shader & Physics Simulation (Unity URP)
+# Real-Time Liquid Shader & Viscous Fluid Wobble Simulation in Unity URP
 
-A real-time liquid shader and viscous fluid wobble simulation system developed in Unity using the **Universal Render Pipeline (URP)** and custom Shader Graph. The system simulates realistic fluid wobble dynamics, surface meniscus, sloshing, and viscosity damping across various container geometries and liquid types.
+A real-time liquid shader and viscous fluid wobble simulation system developed in Unity using the **Universal Render Pipeline (URP)** and custom Shader Graph. The system simulates realistic fluid wobble dynamics, surface meniscus, sloshing, dynamic fill/drain planes, and viscosity damping across various container geometries and liquid types.
 
 ---
 
-## 1. Overview
+## 1. Project Overview
 
-This project provides an interactive and physically inspired liquid simulation framework within Unity URP. It combines a custom shader graph for rendering dynamic fluid surfaces inside transparent containers with C# physics controllers that calculate inertia, sloshing frequency, damping, and viscosity effects under translational and rotational forces.
+This project provides an interactive and physically inspired liquid simulation framework within Unity URP. It combines a custom shader graph for rendering dynamic fluid surfaces inside transparent containers with C# physics controllers that calculate inertia, sloshing frequency, damping, fill level dynamics, and viscosity effects under translational and rotational forces.
 
-### Key Highlights
-- **Interactive Fluid Sloshing**: Dynamic wobble responsive to container movement, rotation, and external impulses.
-- **Viscosity & Density Profiles**: Pre-calibrated physical profiles for multiple fluids (Water, Milk, Vegetable Oil, Honey, Ketchup, and Custom).
+Key simulation features:
 - **Shader Graph Fluid Rendering**: Real-time fluid surface level, plane intersection, wobble vectors, and foam/meniscus styling.
-- **Procedural Container Models**: Custom double-walled glass and fluid meshes generated procedurally.
-- **Spectator Camera & In-Game Authority**: Full WASD camera flight and real-time 3D bottle manipulation (drag & drop, 3D Gizmo axis handles, tilt, and slosh testing).
+- **Dynamic Fill Amount & Cut-Plane Modulation**: Real-time interactive fill level adjustment with physical slosh envelope suppression ($\Psi_{\mathrm{fill}}(F) = 4F(1-F)$).
+- **Physical Inertia & Wobble Dynamics**: Spring-damper physics driven by container linear acceleration and angular velocity.
+- **Coupled Density & Dynamic Viscosity**: Multi-fluid rheology where physical density ($\rho$) and dynamic viscosity ($\mu$) dictate wave frequency, decay time, and Reynolds-number flow characteristics.
+- **Complex Geometric Morphologies & Hydraulic Resistance**: Intricate enclosures (petrol jerrycan, star prism box, toroidal tank, Y-junction manifold, capsule tank, dendritic tree branch, multichambered maze) with distinct boundary shear and tortuosity coefficients.
+- **Universal Render Pipeline (URP)**: Modern scriptable render pipeline configuration with support for forward rendering and real-time lighting.
+- **Full In-Game Bottle Authority**: Player has full authority to move, shake, tilt, nudge, or fly around bottles in Game view using a free-fly spectator camera or interactive 3D move gizmos.
 
 ---
 
-## 2. Verified Project Specifications
+## 2. Rendering Pipeline & Technical Stack
 
-| Component | Specification |
-|---|---|
-| **Unity Editor** | `6000.6.1f1` (Unity 6 LTS) |
-| **Render Pipeline** | Universal Render Pipeline (URP) `17.6.0` |
-| **Input System** | Unity Input System `1.20.0` |
-| **Target Platform** | PC / Mobile |
-| **Color Space** | Linear |
+- **Unity Version**: Unity 6 (6000.6.1f1) / 6000.5.9f1
+- **Render Pipeline**: Universal Render Pipeline (URP)
+- **Shader Authoring**: Unity Shader Graph (`LiquidShaderGrapjh.shadergraph`)
+- **Input System**: Both new Unity Input System (`UnityEngine.InputSystem`) and legacy `Input` supported via preprocessor directives
+- **Target Platforms**: PC / Mac / Linux Standalone, Mobile (GLES3/Vulkan/Metal)
 
 ---
 
-## 3. Supported Fluid Profiles
+## 3. Physical Principles & Fluid Rheology
 
-The simulation models different fluid dynamics based on physical density and dynamic viscosity:
+The simulation models fluid surface oscillation through a coupled spring-damper differential formulation driven by container kinematics:
 
-| Fluid | Density ($\text{kg/m}^3$) | Viscosity ($\text{Pa}\cdot\text{s}$) | Wobble Frequency | Decay Duration | Characteristics |
+$$\frac{d^2 \theta}{dt^2} + 2\zeta\omega_n \frac{d\theta}{dt} + \omega_n^2 \theta = a_{\mathrm{external}}$$
+
+| Fluid | Density ($\mathrm{kg/m}^3$) | Viscosity ($\mathrm{Pa}\cdot\mathrm{s}$) | Wobble Frequency | Decay Duration | Characteristics |
 |---|---|---|---|---|---|
-| **Water** | 1000 | 0.001 | 2.50 Hz | 1.80 s | High oscillation, low damping, fast wave decay |
-| **Milk** | 1030 | 0.003 | 2.30 Hz | 1.60 s | Balanced slosh, opaque fluid scattering |
-| **Vegetable Oil** | 920 | 0.050 | 1.80 Hz | 1.20 s | Moderate damping, smooth wave dissipation |
-| **Honey** | 1420 | 10.000 | 0.90 Hz | 0.45 s | Highly overdamped, slow sluggish displacement |
-| **Ketchup** | 1250 | 50.000 | 0.50 Hz | 0.25 s | Heavy thixotropic damping, quick settling |
-| **Custom** | User-defined | User-defined | Configurable | Configurable | Fully customizable via Inspector |
+| **Cryogenic Gas** | $500$ | $0.0001$ | $4.2\ \mathrm{Hz}$ | Ultra-fast ripples | Near-zero drag, hyperactive surface sloshing |
+| **Petrol (Gasoline)** | $740$ | $0.0006$ | $3.4\ \mathrm{Hz}$ | Fast oscillatory | Low density, rapid slosh waves, sharp meniscus |
+| **Water** | $1000$ | $0.0010$ | $3.0\ \mathrm{Hz}$ | $1.5 - 2.5\ \mathrm{s}$ | Low viscosity, underdamped periodic oscillations |
+| **Hydraulic Coolant** | $1060$ | $0.0035$ | $3.0\ \mathrm{Hz}$ | Moderate decay | Aqueous circulating hydraulic surge dynamics |
+| **Synthetic Motor Oil**| $890$ | $0.2500$ | $2.2\ \mathrm{Hz}$ | Smooth laminar | Viscous boundary damping, laminar swirl |
+| **Vegetable Oil** | $915$ | $0.0500$ | $2.2\ \mathrm{Hz}$ | $0.8 - 1.2\ \mathrm{s}$ | Moderate viscosity, smooth laminar damping |
+| **Tree Sap Resin** | $1380$ | $8.5000$ | $1.4\ \mathrm{Hz}$ | Heavy overdamping| High boundary wall drag, thick creeping flow |
+| **Honey** | $1420$ | $10.000$ | $1.2\ \mathrm{Hz}$ | $0.3 - 0.5\ \mathrm{s}$ | High viscosity, overdamped sluggish response |
+| **Heavy Maze Gel** | $1420$ | $25.000$ | $1.1\ \mathrm{Hz}$ | Severe overdamping| Non-linear dissipation across internal baffle slots |
+| **Ketchup** | $1250$ | $50.000$ | $0.8\ \mathrm{Hz}$ | Rapid arrest | Non-Newtonian thixotropic paste, high resistance |
+| **Liquid Mercury** | $13550$ | $0.0015$ | $2.1\ \mathrm{Hz}$ | Heavy momentum | Extreme mass density, massive inertial resistance |
 
 ---
 
@@ -64,6 +71,14 @@ The initial Week 7 foundation established 5 primary container models, separating
 LiquidShaderFirst/
 ├── Assets/
 │   ├── Materials/
+│   │   ├── Week9/                                        # Dedicated Week 9 realistic fluid materials (7 variants)
+│   │   │   ├── Week9_Petrol_Fluid.mat
+│   │   │   ├── Week9_Mercury_Fluid.mat
+│   │   │   ├── Week9_MotorOil_Fluid.mat
+│   │   │   ├── Week9_Coolant_Fluid.mat
+│   │   │   ├── Week9_CryoGas_Fluid.mat
+│   │   │   ├── Week9_TreeSap_Fluid.mat
+│   │   │   └── Week9_MazeGel_Fluid.mat
 │   │   ├── Week2/                                        # Dedicated Week 8 fluid materials (12 variants)
 │   │   │   ├── Vessel_AlchemicalRetort_VegOil_Fluid.mat
 │   │   │   ├── Vessel_Hourglass_Water_Fluid.mat
@@ -75,47 +90,37 @@ LiquidShaderFirst/
 │   │   ├── Water_Fluid.mat
 │   │   └── glass.mat
 │   ├── Models/
+│   │   ├── Week9_*_Glass.obj                             # Week 9 complex structure glass enclosures (7)
+│   │   ├── Week9_*_Fluid.obj                             # Week 9 complex structure fluid volumes (7)
 │   │   ├── Vessel_*_Glass.obj                            # Week 8 arbitrary geometry glass enclosures (12)
 │   │   ├── Vessel_*_Fluid.obj                            # Week 8 arbitrary geometry fluid volumes (12)
-│   │   ├── Bottle_Hexagonal_Glass.obj                    # Week 7 baseline models
-│   │   ├── Bottle_Square_Glass.obj
-│   │   ├── Flask_Conical_Glass.obj
-│   │   ├── Flask_Spherical_Glass.obj
-│   │   └── Jar_Cylinder_Glass.obj
+│   │   └── Bottle_*_Glass.obj                            # Week 7 baseline models (5)
 │   ├── Prefabs/
+│   │   ├── Week9/                                        # Week 9 realistic dynamics prefabs (7)
+│   │   │   ├── Week9_PetrolContainer_Jerrycan.prefab
+│   │   │   ├── Week9_StarShapedBox.prefab
+│   │   │   ├── Week9_ToroidalTank.prefab
+│   │   │   ├── Week9_YJunctionManifold.prefab            # Important 3-way piping manifold
+│   │   │   ├── Week9_CapsuleTank.prefab
+│   │   │   ├── Week9_TreeBranchedStructure.prefab
+│   │   │   └── Week9_MazeMultichamber.prefab
 │   │   ├── Week2/                                        # Week 8 arbitrary geometry vessel prefabs (12)
-│   │   │   ├── Vessel_Hourglass_Water.prefab
-│   │   │   ├── Vessel_ToroidRing_VegOil.prefab
-│   │   │   └── ...
-│   │   ├── Bottle_Hexagonal_Water.prefab                 # Week 7 baseline prefabs (5)
-│   │   ├── Bottle_Square_VegOil.prefab
-│   │   ├── Flask_Conical_Milk.prefab
-│   │   ├── Flask_Spherical_Honey.prefab
-│   │   └── Jar_Cylinder_Ketchup.prefab
+│   │   └── ...
 │   ├── Scenes/
-│   │   └── SampleScene.unity                             # Dual-tier showcase scene (Week 8 front, Week 7 back)
-│   ├── Settings/
-│   │   ├── PC_RPAsset.asset
-│   │   ├── Mobile_RPAsset.asset
-│   │   └── UniversalRenderPipelineGlobalSettings.asset
+│   │   └── SampleScene.unity                             # 3-tier showcase amphitheater (Week 9, 8, 7)
 │   ├── TutorialInfo/
 │   │   └── Editor/
+│   │       ├── SetupWeek9Showcase.cs                     # Automated Week 9 showcase assembler
 │   │       ├── SetupArbitraryGeometryShowcase.cs         # Automated Week 8 showcase assembler
 │   │       └── SetupFluidContainers.cs                   # Automated Week 7 showcase assembler
+│   ├── Week9FluidDynamicsController.cs                   # Week 9 physics: Density, Viscosity, & Dynamic Fill
 │   ├── ArbitraryViscousFluidFriction.cs                  # Week 8 physics: Navier-Stokes boundary friction
 │   ├── LiquidShaderGrapjh.shadergraph                    # Core URP fluid shader graph
-│   ├── LiquidWobble.cs                                   # Baseline wobble shader controller
 │   ├── ShowcaseCameraController.cs                       # Camera spectator & in-game bottle authority
 │   ├── ViscousLiquidWobble.cs                            # Week 7 viscous fluid dynamics controller
-│   ├── generate_models_v2.py                             # Procedural generator for Week 7 models
-│   └── generate_week2_models.py                          # Procedural generator for Week 8 arbitrary models
+│   └── generate_week9_models.py                          # Procedural generator for Week 9 structures
 ├── Packages/
-│   ├── manifest.json
-│   └── packages-lock.json
 ├── ProjectSettings/
-│   └── ProjectVersion.txt
-├── .gitignore
-├── .vsconfig
 └── README.md
 ```
 
@@ -123,119 +128,155 @@ LiquidShaderFirst/
 
 ## 6. Core Architecture
 
-### 6.1 `LiquidShaderGrapjh.shadergraph`
-A custom URP Shader Graph that handles:
-- **Surface Level Plane**: World-space or object-space liquid fill height.
-- **Wobble Angle & Matrix**: Rotates the fluid plane according to sine wave displacement vectors passed from C#.
-- **Subsurface & Translucency**: Distinct opacity and refraction properties for realistic fluid visuals.
+### 6.1 Shader Graph Mechanics (`LiquidShaderGrapjh.shadergraph`)
+- **Surface Level Plane**: Liquid height driven by property `_Float`.
+- **Wobble Rotation Plane**: Angular displacement matrices driven by `_WobbleX` and `_WobbleZ`.
+- **Meniscus / Boundary Foam**: Tinted rim contour highlighting liquid contact points.
+- **Subsurface & Translucency**: Opacity, smoothness, and metallic response.
 
-### 6.2 C# Simulation Controllers
+### 6.2 Physics Engine Controllers
+- **`Week9FluidDynamicsController.cs` (Week 9)**: Implements realistic fluid mass density ($\rho$), dynamic viscosity ($\mu$), kinematic viscosity ($\nu = \mu/\rho$), container geometric tortuosity ($\kappa$), and the **Fill Amount Magnitude Changing Logic** ($\Psi_{\mathrm{fill}}(F) = 4F(1-F)$).
 - **`ArbitraryViscousFluidFriction.cs` (Week 8)**: Simulates coupled fluid density, dynamic viscosity, wall friction coefficients, and geometric tortuosity boundary shear across 12 arbitrary vessel geometries.
-- **`ViscousLiquidWobble.cs` (Week 7)**: Simulates physical viscous decay, oscillation frequency scaling, and velocity dampening across 5 baseline containers.
-- **`ShowcaseCameraController.cs`**: Manages spectator camera navigation (WASD + free look) and provides complete in-game bottle authority (direct mouse drag, 3D Gizmo axis handles, tilt, and fluid switching).
+- **`ViscousLiquidWobble.cs` (Week 7)**: Multi-density viscous fluid controller with damping profiles.
+- **`ShowcaseCameraController.cs`**: Free-fly spectator camera navigation and comprehensive in-game bottle authority.
 
 ---
 
-## 7. Getting Started & Controls Quickstart
+## 7. Scene Hierarchy & 3-Tier Showcase Amphitheater
 
-### Prerequisites
-- **Unity 6000.6.1f1** (Unity 6 LTS)
-- **Universal Render Pipeline (URP)** package installed (restored automatically by Unity)
+In `SampleScene.unity`, objects are arranged into a 3-tiered amphitheater so all structures are visible simultaneously:
 
-### Setup Instructions
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/harsh24233/Real-Time-Liquid-Shader-Simulation-Unity-URP.git
-   ```
-2. Open **Unity Hub**.
-3. Click **Add** -> **Add project from disk**.
-4. Select the `LiquidShaderFirst` directory.
-5. Open with **Unity Editor 6000.6.1f1**.
-6. Open the main showcase scene:
-   ```text
-   Assets/Scenes/SampleScene.unity
-   ```
-7. Press **Play** to explore the showcase and interact with the containers.
-
----
-
-## 8. Week 8 Extension: Arbitrary Geometry Liquid Simulation & Surface Friction
-
-In the Week 8 update, the liquid shader simulation framework has been expanded with **12 newly engineered arbitrary geometry enclosed vessels**, placed in a **dedicated front showcase line**, featuring coupled fluid **density ($\rho$)**, **dynamic viscosity ($\mu$)**, and **container interior surface friction ($f_{\text{surface}}$ & $\lambda_{\text{geom}}$)** without altering or modifying the original Week 7 setup.
-
-### 8.1 The 12 Newly Designed Arbitrary Geometry Enclosed Vessels
-
-| Vessel Name | Arbitrary Geometry Description | Default Fluid | Surface Friction Type | Geometry Tortuosity ($\lambda_{\text{geom}}$) | Prefab Path |
-|---|---|---|---|---|---|
-| **Vessel_Hourglass_Water** | Pinched hyperbolic waist with flared dual cones | Water | Polished Glass ($f = 0.15$) | $1.85$ (Constriction shear) | `Assets/Prefabs/Week2/Vessel_Hourglass_Water.prefab` |
-| **Vessel_ToroidRing_VegOil** | Hollow enclosed toroidal / ring loop body | Vegetable Oil | Standard Glass ($f = 0.35$) | $1.70$ (Dual-wall boundary loop) | `Assets/Prefabs/Week2/Vessel_ToroidRing_VegOil.prefab` |
-| **Vessel_TriangularPrism_Honey** | Sharp 3-sided prism with rounded transition neck | Honey | Frosted Glass ($f = 0.65$) | $1.60$ (Tri-corner boundary drag) | `Assets/Prefabs/Week2/Vessel_TriangularPrism_Honey.prefab` |
-| **Vessel_Teardrop_Ketchup** | Asymmetric sweeping streamlined teardrop bulb | Ketchup | Textured Resin ($f = 0.88$) | $1.15$ (Streamlined boundary flow) | `Assets/Prefabs/Week2/Vessel_Teardrop_Ketchup.prefab` |
-| **Vessel_OctagonalDecanter_Water** | 8-sided faceted prism with beveled faceted neck | Water | Standard Glass ($f = 0.35$) | $1.40$ (Faceted edge vortex drag) | `Assets/Prefabs/Week2/Vessel_OctagonalDecanter_Water.prefab` |
-| **Vessel_TwistedColumn_VegOil** | 180° twisted helical column with spiral contours | Vegetable Oil | Frosted Glass ($f = 0.65$) | $1.95$ (Helical spiral wall shear) | `Assets/Prefabs/Week2/Vessel_TwistedColumn_VegOil.prefab` |
-| **Vessel_DualBulb_Honey** | Stacked dual spherical lobes connected by constriction | Honey | Standard Glass ($f = 0.35$) | $1.90$ (Inter-chamber orifice drag) | `Assets/Prefabs/Week2/Vessel_DualBulb_Honey.prefab` |
-| **Vessel_CardioidHeart_Ketchup** | Cardioid mathematical heart cross-section vessel | Ketchup | Polished Glass ($f = 0.15$) | $1.65$ (Concave crease friction) | `Assets/Prefabs/Week2/Vessel_CardioidHeart_Ketchup.prefab` |
-| **Vessel_StarPrism_Water** | 5-pointed star body with 10 acute inner/outer ridges | Water | Textured Resin ($f = 0.88$) | $2.10$ (Extreme acute corner skin friction) | `Assets/Prefabs/Week2/Vessel_StarPrism_Water.prefab` |
-| **Vessel_AlchemicalRetort_VegOil** | Bulbous base with angled 35° curved distillation beak | Vegetable Oil | Polished Glass ($f = 0.15$) | $1.80$ (Angled distillation spout shear) | `Assets/Prefabs/Week2/Vessel_AlchemicalRetort_VegOil.prefab` |
-| **Vessel_DiamondGem_Honey** | Octahedral bipyramidal faceted gemstone enclosure | Honey | Polished Glass ($f = 0.15$) | $1.75$ (Multi-faceted boundary drag) | `Assets/Prefabs/Week2/Vessel_DiamondGem_Honey.prefab` |
-| **Vessel_EllipticalCanteen_Ketchup** | Flattened elliptical canteen with side corrugated ribs | Ketchup | Standard Glass ($f = 0.35$) | $2.05$ (Corrugated horizontal wall drag) | `Assets/Prefabs/Week2/Vessel_EllipticalCanteen_Ketchup.prefab` |
-
-### 8.2 Fluid Rheology & Surface Boundary Friction Mechanics
-
-The controller [`ArbitraryViscousFluidFriction.cs`](file:///d:/IP%20unity/LiquidShaderFirst/Assets/ArbitraryViscousFluidFriction.cs) models physical fluid dynamics using coupled Navier-Stokes boundary equations:
-
-1. **Fluid Density ($\rho$) & Inertial Momentum**:
-   - Denser fluids (e.g. Honey: $1420\ \text{kg/m}^3$) carry higher momentum mass ($M = \rho \cdot V$) under acceleration, resisting initial tilt displacement but generating sustained momentum force.
-2. **Dynamic Viscosity ($\mu$) & Kinematic Viscosity ($\nu = \mu / \rho$)**:
-   - Governs internal fluid shear stress:
-     $$\tau = \mu \frac{\partial u}{\partial y}$$
-   - Water ($\mu = 0.001\ \text{Pa}\cdot\text{s}$): underdamped sloshing ($\zeta \approx 0.05$), fast wave oscillation.
-   - Vegetable Oil ($\mu = 0.050\ \text{Pa}\cdot\text{s}$): smooth laminar flow, moderate damping.
-   - Honey ($\mu = 10.0\ \text{Pa}\cdot\text{s}$): near-critical damping, delayed sluggish displacement.
-   - Ketchup ($\mu = 50.0\ \text{Pa}\cdot\text{s}$): non-Newtonian thixotropic paste, high boundary resistance, rapid settling.
-3. **Interior Surface Roughness Friction ($f_{\mathrm{surface}}$)**:
-   - Polished Glass ($f = 0.15$), Standard Glass ($f = 0.35$), Frosted Glass ($f = 0.65$), Textured Resin ($f = 0.88$).
-4. **Geometric Tortuosity & Hydraulic Shape Factor ($\lambda_{\mathrm{geom}}$)**:
-   - Quantifies boundary layer friction and form drag due to narrow channels (Hourglass waist, DualBulb orifice), acute vertices (Star Prism), and spiral grooves (Twisted Column).
-   - Stokes oscillating boundary shear resistance:
-     $$F_{\mathrm{drag}} = f_{\mathrm{surface}} \cdot \lambda_{\mathrm{geom}} \cdot \sqrt{\rho \cdot \mu \cdot \omega_n}$$
-5. **Meniscus Wall Adhesion Cling**:
-   - Simulates sticky liquid clinging to arbitrary geometry walls before gravity draws it back down.
-
-### 8.3 Camera Flight Navigation & In-Game Bottle Authority
-
-[`ShowcaseCameraController.cs`](file:///d:/IP%20unity/LiquidShaderFirst/Assets/ShowcaseCameraController.cs) provides complete spectator navigation and in-game vessel manipulation authority:
-
-#### Camera Controls (Player Movement)
-- **`[W]`, `[A]`, `[S]`, `[D]`**: Fly the camera freely (Forward, Left Strafe, Backward, Right Strafe). Moving with WASD navigates the player view without affecting bottle positions.
-- **`[Right Mouse Button (Hold)]`**: Free-look camera (smooth pitch and yaw, cursor auto-locks during look).
-- **`[Left Shift]`**: Sprint / Boost camera movement speed.
-- **`[Space]` / `[E]`**: Fly upwards vertically.
-- **`[Left Ctrl]` / `[C]` / `[Q]`**: Fly downwards vertically.
-- **`[F1]`**: Tiered Overview (frames both Week 8 front line and Week 7 back line).
-- **`[F2]`**: Front Line focus (12 Week 8 arbitrary vessels).
-- **`[F3]`**: Back Line focus (5 Week 7 baseline containers).
-- **`[F4]`**: Focus camera tightly on the active selected vessel.
-- **`[F5]`**: Switch to Free-Fly Spectator Camera.
-- **`[H]`**: Toggle On-Screen Telemetry HUD.
-
-#### In-Game Bottle Authority (Manipulate Bottles in Play Mode)
-- **Left-Click & Drag**: Click directly on **any** bottle or vessel in the scene to pick it up and move/shake it in real-time. Dynamic fluid sloshes realistically with wall friction and viscosity!
-- **Mouse Scroll Wheel**: Push or pull the dragged bottle closer or further in depth (Z-axis distance).
-- **3D Move Gizmo**: Selecting any bottle spawns an interactive in-game 3D Move Tool:
-  - **Red [X] Handle**: Drag to translate strictly along the world X-axis.
-  - **Green [Y] Handle**: Drag to translate strictly along the world Y-axis.
-  - **Blue [Z] Handle**: Drag to translate strictly along the world Z-axis.
-- **Arrow Keys**: Fine-nudge the selected bottle in 3D (`[←]` / `[→]` for X, `[↑]` / `[↓]` for Y, `[Shift + ↑ / ↓]` or `[PageUp]` / `[PageDown]` for Z).
-- **`[Q]` / `[E]`**: Tilt the bottle left or right to test static fluid level and angular slosh dynamics.
-- **`[R]`**: Instantly reset the selected bottle back to its original illuminated plinth/shelf position.
-- **`[Backspace]`**: Reset ALL bottles in the showcase back to their original positions.
-- **`[1-5]`**: Switch fluid profile (Water, Vegetable Oil, Honey, Ketchup, Milk) on the selected bottle.
-- **`[Tab]` / `[HUD Buttons]`**: Cycle through bottles and trigger impulse sloshing.
+```text
+Viewer Eye / Camera Overview: (0.0, 1.6, -9.0)
+│
+├── [FRONT TIER - Week 9] Z = -1.8m, Y = -0.09m
+│   └── 7 Complex Realistic Morphological Structures:
+│       Petrol Jerrycan, Star Box, Toroid, Y-Junction, Capsule, Tree Branch, Multichamber Maze
+│
+├── [MIDDLE TIER - Week 8] Z = -3.8m, Y = +0.31m
+│   └── 12 Arbitrary Geometry Vessels:
+│       Hourglass, Toroid Ring, Prism, Decanter, Twisted Column, Dual Bulb, Heart, Gem, Canteen...
+│
+└── [BACK TIER - Week 7] Z = -6.0m, Y = +0.86m
+    └── 5 Baseline Containers:
+        Hexagonal Bottle, Square Bottle, Conical Flask, Spherical Flask, Cylinder Jar
+```
 
 ---
 
-## 9. Version Control & Contribution Rules
+## 8. Week 8 Extension: Arbitrary Geometry Simulation & Surface Friction
+
+In Week 8, the framework introduced **12 arbitrary geometry enclosed vessels** placed in a dedicated showcase line, featuring Navier-Stokes boundary layer wall friction:
+
+$$F_{\mathrm{drag}} = f_{\mathrm{surface}} \cdot \lambda_{\mathrm{geom}} \cdot \sqrt{\rho \cdot \mu \cdot \omega_n}$$
+
+---
+
+## 9. Week 9 Extension: Realistic Fluid Rheology, Dynamic Fill Logic & Complex Morphological Structures
+
+The Week 9 update introduces an advanced fluid dynamics architecture developed **independently without modifying or regressing Week 7 or Week 8 systems**. It addresses three scientific and geometric challenges:
+
+### 9.1 Realistic Density ($\rho$) & Dynamic Viscosity ($\mu$) Modeling
+
+Each container is paired with a distinct real-world fluid with physically verified constants:
+
+1. **Petrol / Gasoline** ($\rho = 740\ \mathrm{kg/m}^3, \mu = 0.0006\ \mathrm{Pa}\cdot\mathrm{s}$):
+   - Translucent amber fuel. Low density and ultra-low viscosity produce rapid, high-frequency slosh waves with sharp meniscus edges.
+2. **Liquid Mercury (Quicksilver)** ($\rho = 13550\ \mathrm{kg/m}^3, \mu = 0.0015\ \mathrm{Pa}\cdot\mathrm{s}$):
+   - Mirror-finish chrome liquid metal. Massive density carries $13.5\times$ the inertial mass of water. Resists sudden acceleration but retains immense kinetic momentum, producing powerful, persistent wave oscillations.
+3. **Synthetic Motor Oil** ($\rho = 890\ \mathrm{kg/m}^3, \mu = 0.2500\ \mathrm{Pa}\cdot\mathrm{s}$):
+   - Golden-brown lubricant. High viscous dissipation suppresses small capillary ripples, maintaining smooth laminar flow.
+4. **Hydraulic Coolant** ($\rho = 1060\ \mathrm{kg/m}^3, \mu = 0.0035\ \mathrm{Pa}\cdot\mathrm{s}$):
+   - Fluorescent emerald green circulating hydraulic fluid. Optimized for energetic fluid surging across piping networks.
+5. **Cryogenic Liquid Gas / Propane** ($\rho = 500\ \mathrm{kg/m}^3, \mu = 0.0001\ \mathrm{Pa}\cdot\mathrm{s}$):
+   - Crystal-clear pale ice-blue cryogen. Ultralight density and almost zero dynamic drag generate hyperactive high-frequency fluttering ripples.
+6. **Tree Sap / Natural Amber Resin** ($\rho = 1380\ \mathrm{kg/m}^3, \mu = 8.5000\ \mathrm{Pa}\cdot\mathrm{s}$):
+   - Rich golden-red viscous sap. Heavy boundary layer wall cling with thick creeping flow along branching channels.
+7. **Heavy Maze Gel / Industrial Molasses** ($\rho = 1420\ \mathrm{kg/m}^3, \mu = 25.0000\ \mathrm{Pa}\cdot\mathrm{s}$):
+   - Opaque crimson gel. Strongly overdamped flow traversing constricted labyrinth chambers.
+
+---
+
+### 9.2 Fill Amount Magnitude Changing Logic
+
+In fluid mechanics, free-surface slosh wave amplitude is physically constrained by fluid volume and container headspace:
+
+$$\Psi_{\mathrm{fill}}(F) = 4 \cdot F \cdot (1 - F)$$
+
+Where $F \in [0.0, 1.0]$ is the normalized container fill fraction.
+
+#### Physical Principles of the Fill Envelope:
+1. **Near-Empty Regime ($F \to 0$)**: Fluid mass approaches zero and the shallow boundary layer quenches surface standing waves ($\lim_{F \to 0} \Psi(F) = 0$).
+2. **Intermediate Resonance Peak ($F \approx 0.50$)**: Maximum free-surface area combined with adequate headspace allows unrestricted slosh wave cresting and standing wave resonance ($\Psi(0.50) = 1.0$).
+3. **Near-Full Confinement ($F \to 1.0$)**: Fluid is bounded by the container ceiling; headspace confinement physically suppresses wave amplitude ($\lim_{F \to 1} \Psi(F) = 0$).
+
+#### Gravity Wave Resonant Frequency Dispersion:
+Based on intermediate-to-deep water dispersion mechanics:
+
+$$\omega_n(F) = \omega_0 \cdot \sqrt{\tanh(\pi \cdot F)}$$
+
+Shallow fill levels exhibit longer wave periods, while deeper fill levels shift toward the asymptotic deep-water gravity slosh frequency.
+
+#### Real-Time Shader Integration:
+- The controller calculates the world-space cut plane position:
+  $$Y_{\mathrm{plane}} = Y_{\mathrm{center}} + \mathrm{lerp}(Y_{\min}, Y_{\max}, F)$$
+- Updates the shader property `_Float` in real-time via `MaterialPropertyBlock`, isolating each vessel without material cloning overhead.
+- Interactive hotkeys (`[` to drain, `]` to fill) and an automated harmonic pump cycle (`enableAutoFillDrainCycle`) allow live visualization of fill-level slosh modulation.
+
+---
+
+### 9.3 The 7 Complex Morphological Structures & Geometric Tortuosity
+
+| Structure Name | Morphological Description | Fluid Material | Tortuosity ($\kappa$) | Prefab Path |
+|---|---|---|---|---|
+| **Week9_PetrolContainer_Jerrycan** | Rounded rectangular body, top tubular handle, stiffening side ribs, angled filler spout & cap | Petrol (Gasoline) | $1.35$ | `Assets/Prefabs/Week9/Week9_PetrolContainer_Jerrycan.prefab` |
+| **Week9_StarShapedBox** | 5-pointed extruded star prism with 10 acute boundary ridges, top lid rim, and base stand | Liquid Mercury | $2.20$ | `Assets/Prefabs/Week9/Week9_StarShapedBox.prefab` |
+| **Week9_ToroidalTank** | Upright circular annular ring torus with central void opening, top port, and 4 cradle legs | Synthetic Motor Oil | $1.75$ | `Assets/Prefabs/Week9/Week9_ToroidalTank.prefab` |
+| **Week9_YJunctionManifold** | **Important**: 3-way piping manifold with vertical trunk splitting into dual symmetric angled branches, flange rings, and cross-strut | Hydraulic Coolant | $2.45$ | `Assets/Prefabs/Week9/Week9_YJunctionManifold.prefab` |
+| **Week9_CapsuleTank** | Cylindrical pressure barrel with dual hemispherical dome caps, reinforcing girth bands, and support legs | Cryogenic Gas | $1.10$ | `Assets/Prefabs/Week9/Week9_CapsuleTank.prefab` |
+| **Week9_TreeBranchedStructure** | Dendritic multi-tier branching tree: base trunk, 3 primary limbs, 6 capillary spouts, and terminal reservoir bulbs | Tree Sap Resin | $2.60$ | `Assets/Prefabs/Week9/Week9_TreeBranchedStructure.prefab` |
+| **Week9_MazeMultichamber** | 4-chamber baffled labyrinth tank with alternating underflow slots and overflow weir partitions | Heavy Maze Gel | $3.10$ | `Assets/Prefabs/Week9/Week9_MazeMultichamber.prefab` |
+
+---
+
+## 10. Showcase Controls & Interactive In-Game Authority
+
+### Camera Navigation Controls
+- **`[WASD]`**: Fly camera freely across the showcase.
+- **`[Right-Click + Mouse Move]`**: Look around in 360° (first-person spectator view).
+- **`[Shift]`**: Sprint multiplier ($2.5\times$ speed).
+- **`[Space] / [E]`**: Fly upward.
+- **`[C] / [Ctrl] / [Q]`**: Fly downward.
+- **`[F1]`**: **Overview Mode** (frames all 3 showcase tiers).
+- **`[F6]`**: **Week 9 Showcase Line** (frames the 7 new realistic structures).
+- **`[F2]`**: **Week 8 Showcase Line** (frames the 12 arbitrary geometry vessels).
+- **`[F3]`**: **Week 7 Baseline Line** (frames the original 5 containers).
+- **`[F4]`**: **Focus Camera** on selected vessel.
+- **`[F5]`**: **Free-Fly Spectator Mode**.
+- **`[H]`**: Toggle on-screen telemetry HUD.
+
+### In-Game Bottle Authority & Dynamic Fill
+- **Left-Click & Drag**: Click directly on **any** bottle or structure in the scene to move/shake it in real-time.
+- **Mouse Scroll Wheel**: Push or pull the dragged container closer or further in depth ($Z$-axis).
+- **Interactive 3D Move Gizmo**: Displays interactive red ($X$), green ($Y$), and blue ($Z$) move handles on the selected vessel.
+- **`[` / `]`**: Dynamically decrease or increase fluid fill level ($F$) in real-time. Watch sloshing peak at $50\%$ and suppress at $10\%$ and $95\%$.
+- **`[1-7]`**: Switch fluid profile (Petrol, Mercury, Motor Oil, Coolant, CryoGas, Tree Sap, Maze Gel) on the selected Week 9 vessel.
+- **`[Q]` / `[E]`**: Tilt the vessel to observe liquid leveling against walls.
+- **`[R]`**: Reset selected vessel to its original shelf plinth.
+- **`[Backspace]`**: Reset all vessels across all 3 tiers.
+
+---
+
+## 11. Automated Editor Setup Tools
+
+The project includes editor tools under the Unity menu bar:
+- **`Tools > Setup Week 9 - Realistic Fluid Dynamics & Dynamic Fill Showcase`**: Automatically creates Week 9 models, prefabs, materials, and assembles the front showcase tier.
+- **`Tools > Setup Week 2 - Arbitrary Geometry Showcase`**: Assembles the 12 Week 8 arbitrary geometry vessels.
+- **`Tools > Setup Fluid Containers`**: Assembles the 5 Week 7 baseline bottles.
+
+---
+
+## 12. Version Control & Contribution Rules
 
 - Generated Unity folders (`Library/`, `Temp/`, `Obj/`, `Logs/`, `UserSettings/`) are excluded via `.gitignore`.
 - All Unity `.meta` files are tracked to ensure asset GUID integrity.
@@ -243,7 +284,7 @@ The controller [`ArbitraryViscousFluidFriction.cs`](file:///d:/IP%20unity/Liquid
 
 ---
 
-## 10. Author & Academic Context
+## 13. Author & Academic Context
 
 **Harsh**  
 Indraprastha Institute of Information Technology Delhi (IIIT-Delhi)  
