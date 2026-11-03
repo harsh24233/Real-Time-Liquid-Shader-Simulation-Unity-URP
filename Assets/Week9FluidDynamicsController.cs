@@ -474,7 +474,12 @@ public class Week9FluidDynamicsController : MonoBehaviour
     }
 
     [ContextMenu("Trigger Impulse Slosh")]
-    public void TriggerImpulseSlosh(float impulse = 0.35f)
+    public void TriggerImpulseSlosh()
+    {
+        TriggerImpulseSlosh(0.35f);
+    }
+
+    public void TriggerImpulseSlosh(float impulse)
     {
         float envelope = Mathf.Max(0.2f, currentFillMagnitudeEnvelope);
         wobbleVelocityX += impulse * 3.5f * envelope;
@@ -701,4 +706,34 @@ public class Week9FluidDynamicsController : MonoBehaviour
     public float Density => densityKgM3;
     public float DynamicViscosity => dynamicViscosityPaS;
 }
+
+#if UNITY_EDITOR
+[CustomEditor(typeof(Week9FluidDynamicsController))]
+public class Week9FluidDynamicsControllerEditor : Editor
+{
+    public override void OnInspectorGUI()
+    {
+        DrawDefaultInspector();
+
+        Week9FluidDynamicsController sim = (Week9FluidDynamicsController)target;
+
+        EditorGUILayout.Space(12);
+        GUI.backgroundColor = new Color(0.25f, 0.8f, 1f);
+        if (GUILayout.Button("Trigger Impulse Slosh", GUILayout.Height(36)))
+        {
+            sim.TriggerImpulseSlosh();
+            EditorApplication.QueuePlayerLoopUpdate();
+            SceneView.RepaintAll();
+        }
+        GUI.backgroundColor = Color.white;
+
+        EditorGUILayout.Space(6);
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("10% Fill")) { sim.fillAmount = 0.10f; sim.UpdateFillCutPlane(false); EditorApplication.QueuePlayerLoopUpdate(); SceneView.RepaintAll(); }
+        if (GUILayout.Button("50% Fill")) { sim.fillAmount = 0.50f; sim.UpdateFillCutPlane(false); EditorApplication.QueuePlayerLoopUpdate(); SceneView.RepaintAll(); }
+        if (GUILayout.Button("95% Fill")) { sim.fillAmount = 0.95f; sim.UpdateFillCutPlane(false); EditorApplication.QueuePlayerLoopUpdate(); SceneView.RepaintAll(); }
+        EditorGUILayout.EndHorizontal();
+    }
+}
+#endif
 
