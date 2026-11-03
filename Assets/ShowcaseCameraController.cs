@@ -935,6 +935,11 @@ public class ShowcaseCameraController : MonoBehaviour
                 GUILayout.Label($"Slosh Factor \u03a8(F) = 4F(1-F): <b>{sel.Week9Sim.CurrentFillMagnitudeEnvelope:F2}</b>" +
                     (sel.Week9Sim.fillAmount >= 0.40f && sel.Week9Sim.fillAmount <= 0.60f ? " <color=#FFE066>★ PEAK SLOSH</color>" : " (Suppressed)"));
 
+                if (sel.Week9Sim.IsGelSlumping)
+                {
+                    GUILayout.Label($"<color=#FFAA55>★ Heavy Gel Rheology: <b>{sel.Week9Sim.GelSlumpStatus}</b></color>");
+                }
+
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("10% Shallow")) { sel.Week9Sim.fillAmount = 0.10f; sel.Week9Sim.UpdateFillCutPlane(false); }
                 if (GUILayout.Button("50% Peak Resonance")) { sel.Week9Sim.fillAmount = 0.50f; sel.Week9Sim.UpdateFillCutPlane(false); }

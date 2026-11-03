@@ -122,6 +122,26 @@ public class Week9FluidDynamicsController : MonoBehaviour
     private float currentResonantFrequency = 1f;     // omega(F)
     private float currentEffectiveDamping = 1f;      // gamma(F, rho, mu, tortuosity)
 
+    [Header("Viscous Creep & Yield Slump (Heavy Maze Gel)")]
+    [Tooltip("Enables delayed Bingham-plastic yield and creeping gravitational slump when rotated.")]
+    [SerializeField] private bool enableViscousCreepSlump = true;
+    [Tooltip("Yield delay in seconds before heavy gel breaks wall cling and begins to slump under gravity.")]
+    [SerializeField] private float gelYieldDelay = 0.55f;
+    [Tooltip("Relaxation duration in seconds for heavy gel to creep and fall to horizontal level.")]
+    [SerializeField] private float gelSlumpDuration = 2.4f;
+
+    // Gel surface normal in world space (starts at Vector3.up)
+    private Vector3 gelSurfaceNormal = Vector3.up;
+    private float gelHesitationTimer = 0f;
+    private float gelClingX = 0f;
+    private float gelClingZ = 0f;
+
+    public bool IsGelSlumping => (fluidType == Week9FluidType.HeavyMazeGel || dynamicViscosityPaS >= 5.0f) && 
+                                  (gelHesitationTimer > 0f || Vector3.Angle(gelSurfaceNormal, Vector3.up) > 0.5f);
+    public float GelTiltAngle => Vector3.Angle(gelSurfaceNormal, Vector3.up);
+    public string GelSlumpStatus => gelHesitationTimer > 0f ? $"Clinging (Delay {gelHesitationTimer:F2}s)" :
+                                    GelTiltAngle > 0.5f ? $"Slumping ({GelTiltAngle:F1}° under gravity)" : "Level";
+
     private MaterialPropertyBlock propBlock;
     private Material activeMaterial;
 
@@ -251,6 +271,35 @@ public class Week9FluidDynamicsController : MonoBehaviour
 
         densityKgM3 = prof.densityKgM3;
         dynamicViscosityPaS = prof.dynamicViscosityPaS;
+
+        // Reset gel normal states
+        gelSurfaceNormal = Vector3.up;
+        gelHesitationTimer = 0f;
+        gelClingX = 0f;
+        gelClingZ = 0f;
+
+#if UNITY_EDITOR
+        string matPath = type switch
+        {
+            Week9FluidType.Petrol_Gasoline => "Assets/Materials/Week9/Week9_Petrol_Fluid.mat",
+            Week9FluidType.LiquidMercury => "Assets/Materials/Week9/Week9_Mercury_Fluid.mat",
+            Week9FluidType.SyntheticMotorOil => "Assets/Materials/Week9/Week9_MotorOil_Fluid.mat",
+            Week9FluidType.HydraulicCoolant => "Assets/Materials/Week9/Week9_Coolant_Fluid.mat",
+            Week9FluidType.CryogenicLiquidGas => "Assets/Materials/Week9/Week9_CryoGas_Fluid.mat",
+            Week9FluidType.TreeSapResin => "Assets/Materials/Week9/Week9_TreeSap_Fluid.mat",
+            Week9FluidType.HeavyMazeGel => "Assets/Materials/Week9/Week9_MazeGel_Fluid.mat",
+            _ => null
+        };
+        if (matPath != null && fluidRenderer != null)
+        {
+            var newMat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(matPath);
+            if (newMat != null)
+            {
+                if (Application.isPlaying) fluidRenderer.material = newMat;
+                else fluidRenderer.sharedMaterial = newMat;
+            }
+        }
+#endif
     }
 
     public void ApplyStructurePreset(Week9StructureType type)
@@ -303,9 +352,14 @@ public class Week9FluidDynamicsController : MonoBehaviour
         // 4. Fill Amount Magnitude Changing Logic & Physical Dynamics Coupling
         ComputeFillAmountCoupledDynamics(acceleration, currentAngularVelocity, dt);
 
+        // 4b. Viscous Creep & Gravitational Slump Dynamics (Heavy Maze Gel)
+        UpdateViscousCreepSlump(deltaRot, dt);
+
         // 5. Update Shader Properties (localFillY is with respect to object, perfectly invariant to world movement!)
         float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
-        SendShaderProperties(wobbleX, wobbleZ, localFillY);
+        float totalWobbleX = wobbleX + gelClingX;
+        float totalWobbleZ = wobbleZ + gelClingZ;
+        SendShaderProperties(totalWobbleX, totalWobbleZ, localFillY);
 
         lastPosition = currentPos;
         lastRotation = currentRot;
@@ -428,6 +482,78 @@ public class Week9FluidDynamicsController : MonoBehaviour
     }
 
     /// <summary>
+    /// Implements thixotropic Bingham-plastic creep and delayed gravitational slump for heavy viscous gel.
+    /// When rotated, heavy gel clings to container chamber walls (holding its tilted orientation for a yield delay),
+    /// then shears and slumps downward to horizontal level under gravitational stress over several seconds.
+    /// </summary>
+    private void UpdateViscousCreepSlump(Quaternion deltaRot, float dt)
+    {
+        bool isHeavyGel = enableViscousCreepSlump && (fluidType == Week9FluidType.HeavyMazeGel || dynamicViscosityPaS >= 5.0f);
+
+        if (!isHeavyGel)
+        {
+            gelSurfaceNormal = Vector3.up;
+            gelHesitationTimer = 0f;
+            gelClingX = 0f;
+            gelClingZ = 0f;
+            return;
+        }
+
+        // 1. Container Rotation: Gel clings to chamber walls and rotates WITH the container
+        deltaRot.ToAngleAxis(out float angleDeg, out Vector3 axis);
+        if (angleDeg > 180f) angleDeg -= 360f;
+        if (Mathf.Abs(angleDeg) > 0.02f)
+        {
+            // Rotate the gel surface normal with container orientation
+            gelSurfaceNormal = deltaRot * gelSurfaceNormal;
+            gelSurfaceNormal.Normalize();
+
+            // Refresh hesitation delay timer (heavy gel yield stress resists immediate flow)
+            gelHesitationTimer = gelYieldDelay;
+        }
+
+        // 2. Yield Stress & Gravitational Slump:
+        // Holds orientation while gelHesitationTimer > 0; then gravitational shear forces it to slowly fall/slump downward!
+        if (gelHesitationTimer > 0f)
+        {
+            gelHesitationTimer -= dt;
+        }
+        else
+        {
+            // Gravitational shear torque scales with horizontal displacement of normal (sin theta)
+            float sinTheta = Mathf.Sqrt(gelSurfaceNormal.x * gelSurfaceNormal.x + gelSurfaceNormal.z * gelSurfaceNormal.z);
+            if (sinTheta > 0.001f)
+            {
+                // Non-Newtonian thixotropic slump rate:
+                // Starts slow (creeping), accelerates under continuous shear stress, and softly settles
+                float shearRate = Mathf.Pow(sinTheta, 1.2f);
+                float slumpSpeedDeg = (90f / Mathf.Max(0.5f, gelSlumpDuration)) * shearRate;
+                slumpSpeedDeg = Mathf.Max(slumpSpeedDeg, 8f); // Minimum creep rate so it doesn't stall indefinitely
+
+                gelSurfaceNormal = Vector3.RotateTowards(gelSurfaceNormal, Vector3.up, slumpSpeedDeg * Mathf.Deg2Rad * dt, 0f);
+                gelSurfaceNormal.Normalize();
+            }
+            else
+            {
+                gelSurfaceNormal = Vector3.up;
+            }
+        }
+
+        // Ensure upward-facing normal so shader cut plane remains stable (clamp to 15 degrees above horizon)
+        if (gelSurfaceNormal.y < 0.15f)
+        {
+            gelSurfaceNormal.y = 0.15f;
+            gelSurfaceNormal.Normalize();
+        }
+
+        // 3. Convert Gel Surface Normal to Shader Wobble Offsets
+        // Plane normal in shader: N = ( _WobbleZ, 1, -_WobbleX )
+        float safeNy = Mathf.Max(gelSurfaceNormal.y, 0.15f);
+        gelClingZ = Mathf.Clamp(gelSurfaceNormal.x / safeNy, -1.25f, 1.25f);
+        gelClingX = Mathf.Clamp(-gelSurfaceNormal.z / safeNy, -1.25f, 1.25f);
+    }
+
+    /// <summary>
     /// Updates the shader cut plane using localFillY (with respect to object).
     /// This guarantees the fluid volume stays 100% constant when moving the container up/down in world space!
     /// </summary>
@@ -437,7 +563,9 @@ public class Week9FluidDynamicsController : MonoBehaviour
         if (fluidRenderer == null) return;
 
         float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
-        SendShaderProperties(wobbleX, wobbleZ, localFillY);
+        float totalWobbleX = wobbleX + gelClingX;
+        float totalWobbleZ = wobbleZ + gelClingZ;
+        SendShaderProperties(totalWobbleX, totalWobbleZ, localFillY);
     }
 
 #if UNITY_EDITOR
@@ -474,9 +602,12 @@ public class Week9FluidDynamicsController : MonoBehaviour
         currentAngularVelocity = Vector3.Lerp(currentAngularVelocity, rawAngVel, Mathf.Clamp01(dt * 15f));
 
         ComputeFillAmountCoupledDynamics(acceleration, currentAngularVelocity, dt);
+        UpdateViscousCreepSlump(deltaRot, dt);
 
         float localFillY = Mathf.Lerp(localYMin, localYMax, fillAmount);
-        SendShaderProperties(wobbleX, wobbleZ, localFillY);
+        float totalWobbleX = wobbleX + gelClingX;
+        float totalWobbleZ = wobbleZ + gelClingZ;
+        SendShaderProperties(totalWobbleX, totalWobbleZ, localFillY);
 
         lastPosition = currentPos;
         lastRotation = currentRot;
@@ -484,7 +615,8 @@ public class Week9FluidDynamicsController : MonoBehaviour
         previousAngularVelocity = currentAngularVelocity;
 
         bool hasWobble = Mathf.Abs(wobbleX) > 0.0002f || Mathf.Abs(wobbleVelocityX) > 0.0005f ||
-                         Mathf.Abs(wobbleZ) > 0.0002f || Mathf.Abs(wobbleVelocityZ) > 0.0005f;
+                         Mathf.Abs(wobbleZ) > 0.0002f || Mathf.Abs(wobbleVelocityZ) > 0.0005f ||
+                         Mathf.Abs(gelClingX) > 0.001f || Mathf.Abs(gelClingZ) > 0.001f || gelHesitationTimer > 0f;
 
         if (moved || hadWobble || hasWobble)
         {
