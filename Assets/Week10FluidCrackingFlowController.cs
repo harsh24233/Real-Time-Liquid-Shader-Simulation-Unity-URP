@@ -167,8 +167,11 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
     private static readonly int WobbleZProp = Shader.PropertyToID("_WobbleZ");
     private static readonly int FloatFillProp = Shader.PropertyToID("_Float");
 
-    // Dynamic Shattered Shards & Restart Management
+    // Dynamic Shattered Shards, Physical Glass Parts & Restart Management
     private List<GameObject> spawnedShards = new List<GameObject>();
+    private List<GameObject> spawnedFractureObjects = new List<GameObject>();
+    private GameObject spiderwebCrackObj = null;
+    private GameObject fluidPuddleObj = null;
     private float initialFillAmount = 0.50f;
 
     // Pre-calibrated Week 10 Physical Profiles
@@ -212,7 +215,7 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         if (Application.isPlaying)
         {
             isCracked = false;
-            CleanupShards();
+            CleanupAllFractureObjects();
             if (crackVisualTransform != null) crackVisualTransform.gameObject.SetActive(false);
             if (outwardJetLine != null) outwardJetLine.positionCount = 0;
             if (splashParticles != null) splashParticles.Stop();
@@ -232,7 +235,7 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
 
     private void OnDisable()
     {
-        CleanupShards();
+        CleanupAllFractureObjects();
 #if UNITY_EDITOR
         EditorApplication.update -= OnEditorUpdate;
 #endif
@@ -240,7 +243,7 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
 
     private void OnDestroy()
     {
-        CleanupShards();
+        CleanupAllFractureObjects();
 #if UNITY_EDITOR
         EditorApplication.update -= OnEditorUpdate;
 #endif
@@ -440,6 +443,13 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         // 5. Outward Fluid Flow & Hydrostatic Drainage
         SimulateFractureOutflow(dt);
 
+        if (fluidPuddleObj != null && isCracked)
+        {
+            float drained = Mathf.Max(0f, initialFillAmount - fillAmount);
+            float puddleDiameter = Mathf.Clamp(0.06f + drained * 0.45f, 0.06f, 0.38f);
+            fluidPuddleObj.transform.localScale = new Vector3(puddleDiameter, 0.001f, puddleDiameter);
+        }
+
         // 6. Complete Fill Shader Modulation
         UpdateFillCutPlane(false);
 
@@ -482,7 +492,8 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
     }
 
     /// <summary>
-    /// Cracks the enclosed system, causing outward fluid flow.
+    /// Cracks and physically fractures the glass enclosure into separate parts,
+    /// bursting sharp shards outward and allowing fluid to gush out.
     /// </summary>
     [ContextMenu("Crack Enclosure")]
     public void TriggerCrack()
@@ -490,12 +501,17 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         if (isCracked) return;
         isCracked = true;
         EnsureJetVisuals();
-        if (crackVisualTransform != null) crackVisualTransform.gameObject.SetActive(true);
-        SpawnFractureShards();
+
+        Vector3 crackWorldPos = transform.TransformPoint(crackLocalPosition);
+        Vector3 crackWorldNorm = transform.TransformDirection(crackLocalNormal).normalized;
+
+        FractureGlassEnclosure(crackWorldPos, crackWorldNorm);
+        SpawnSharpGlassShards(crackWorldPos, crackWorldNorm);
+        CreateSpiderwebFracture(crackWorldPos, crackWorldNorm);
     }
 
     /// <summary>
-    /// Repairs and reseals the structural breach.
+    /// Repairs and reseals the structural breach, restoring the glass container in one piece.
     /// </summary>
     [ContextMenu("Repair & Seal Enclosure")]
     public void RepairCrack()
@@ -507,8 +523,7 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         outwardFlowRateMilliLitersPerSec = 0f;
         if (outwardJetLine != null) outwardJetLine.positionCount = 0;
         if (splashParticles != null) splashParticles.Stop();
-        if (crackVisualTransform != null) crackVisualTransform.gameObject.SetActive(false);
-        CleanupShards();
+        CleanupAllFractureObjects();
     }
 
     public void TriggerStructuralCrack() => TriggerCrack();
@@ -528,48 +543,338 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         UpdateFillCutPlane(true);
     }
 
-    private void SpawnFractureShards()
+    private void FractureGlassEnclosure(Vector3 crackWorldPos, Vector3 crackWorldNorm)
     {
-        CleanupShards();
+        if (glassRenderer == null) CacheReferences();
+        if (glassRenderer == null) return;
 
-        Vector3 crackWorldPos = transform.TransformPoint(crackLocalPosition);
-        Vector3 crackWorldNorm = transform.TransformDirection(crackLocalNormal).normalized;
+        MeshFilter mf = glassRenderer.GetComponent<MeshFilter>();
+        if (mf == null || mf.sharedMesh == null) return;
 
-        Material glassMat = null;
-        if (glassRenderer != null) glassMat = glassRenderer.sharedMaterial;
+        Mesh srcMesh = mf.sharedMesh;
+        Vector3[] verts = srcMesh.vertices;
+        int[] tris = srcMesh.triangles;
+        if (verts == null || verts.Length == 0 || tris == null || tris.Length == 0) return;
+
+        // Find the vertex on the glass surface closest to crackLocalPosition
+        Vector3 breachCenter = crackLocalPosition;
+        float minDistSq = float.MaxValue;
+        for (int i = 0; i < verts.Length; i++)
+        {
+            float d = (verts[i] - crackLocalPosition).sqrMagnitude;
+            if (d < minDistSq)
+            {
+                minDistSq = d;
+                breachCenter = verts[i];
+            }
+        }
+
+        // Partition triangles into:
+        // - Hole / blown-out fragment
+        // - Upper fractured section
+        // - Lower basin section
+        float boundsHeight = srcMesh.bounds.size.y;
+        float breachRadius = Mathf.Clamp(boundsHeight * 0.22f, 0.06f, 0.14f);
+
+        List<int> trisHole = new List<int>();
+        List<int> trisUpper = new List<int>();
+        List<int> trisLower = new List<int>();
+
+        for (int i = 0; i < tris.Length; i += 3)
+        {
+            Vector3 centroid = (verts[tris[i]] + verts[tris[i + 1]] + verts[tris[i + 2]]) / 3f;
+            float distFromBreach = Vector3.Distance(centroid, breachCenter);
+
+            if (distFromBreach <= breachRadius)
+            {
+                trisHole.Add(tris[i]);
+                trisHole.Add(tris[i + 1]);
+                trisHole.Add(tris[i + 2]);
+            }
+            else if (centroid.y > breachCenter.y + breachRadius * 0.15f)
+            {
+                trisUpper.Add(tris[i]);
+                trisUpper.Add(tris[i + 1]);
+                trisUpper.Add(tris[i + 2]);
+            }
+            else
+            {
+                trisLower.Add(tris[i]);
+                trisLower.Add(tris[i + 1]);
+                trisLower.Add(tris[i + 2]);
+            }
+        }
+
+        Material glassMat = glassRenderer.sharedMaterial;
 #if UNITY_EDITOR
         if (glassMat == null) glassMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/glass.mat");
 #endif
 
-        int shardCount = 7;
+        Transform gT = glassRenderer.transform;
+
+        // Part A: Blown-Out Wall Chunk
+        Mesh meshHole = CreateSubmesh(srcMesh, trisHole);
+        if (meshHole != null)
+        {
+            GameObject partHole = new GameObject($"{name}_BlownOutGlassChunk");
+            partHole.transform.SetParent(transform.parent != null ? transform.parent : null);
+            partHole.transform.position = gT.position;
+            partHole.transform.rotation = gT.rotation;
+            partHole.transform.localScale = gT.lossyScale;
+
+            MeshFilter pmf = partHole.AddComponent<MeshFilter>();
+            pmf.sharedMesh = meshHole;
+            MeshRenderer pmr = partHole.AddComponent<MeshRenderer>();
+            pmr.sharedMaterial = glassMat;
+
+            Rigidbody rb = partHole.AddComponent<Rigidbody>();
+            rb.mass = 0.15f;
+            Vector3 blastDir = (crackWorldNorm * 2.2f + Vector3.up * 0.65f + Random.insideUnitSphere * 0.35f).normalized;
+            rb.linearVelocity = blastDir * Random.Range(1.8f, 2.8f);
+            rb.angularVelocity = Random.insideUnitSphere * Random.Range(12f, 28f);
+
+            partHole.AddComponent<BoxCollider>();
+            spawnedFractureObjects.Add(partHole);
+        }
+
+        // Part B: Upper Broken Section (Tilted and separated along fracture plane)
+        Mesh meshUpper = CreateSubmesh(srcMesh, trisUpper);
+        if (meshUpper != null)
+        {
+            GameObject partUpper = new GameObject($"{name}_UpperBrokenSection");
+            partUpper.transform.SetParent(transform);
+            Vector3 tiltAxis = Vector3.Cross(crackLocalNormal, Vector3.up).normalized;
+            if (tiltAxis.sqrMagnitude < 0.01f) tiltAxis = Vector3.forward;
+            partUpper.transform.localPosition = new Vector3(-crackLocalNormal.x * 0.018f, 0.022f, -crackLocalNormal.z * 0.018f);
+            partUpper.transform.localRotation = Quaternion.AngleAxis(Random.Range(5.5f, 9.5f), tiltAxis);
+            partUpper.transform.localScale = gT.localScale;
+
+            MeshFilter pmf = partUpper.AddComponent<MeshFilter>();
+            pmf.sharedMesh = meshUpper;
+            MeshRenderer pmr = partUpper.AddComponent<MeshRenderer>();
+            pmr.sharedMaterial = glassMat;
+            spawnedFractureObjects.Add(partUpper);
+        }
+
+        // Part C: Lower Basin Section
+        Mesh meshLower = CreateSubmesh(srcMesh, trisLower);
+        if (meshLower != null)
+        {
+            GameObject partLower = new GameObject($"{name}_LowerBasinSection");
+            partLower.transform.SetParent(transform);
+            partLower.transform.localPosition = gT.localPosition;
+            partLower.transform.localRotation = gT.localRotation;
+            partLower.transform.localScale = gT.localScale;
+
+            MeshFilter pmf = partLower.AddComponent<MeshFilter>();
+            pmf.sharedMesh = meshLower;
+            MeshRenderer pmr = partLower.AddComponent<MeshRenderer>();
+            pmr.sharedMaterial = glassMat;
+            spawnedFractureObjects.Add(partLower);
+        }
+
+        // Hide intact glass shell so broken parts are displayed
+        glassRenderer.enabled = false;
+    }
+
+    private static Mesh CreateSubmesh(Mesh sourceMesh, List<int> subTriangles)
+    {
+        if (subTriangles == null || subTriangles.Count == 0) return null;
+
+        Vector3[] srcVerts = sourceMesh.vertices;
+        Vector3[] srcNorms = sourceMesh.normals;
+        Vector2[] srcUVs = sourceMesh.uv;
+
+        Dictionary<int, int> remap = new Dictionary<int, int>();
+        List<Vector3> newVerts = new List<Vector3>();
+        List<Vector3> newNorms = new List<Vector3>();
+        List<Vector2> newUVs = new List<Vector2>();
+        List<int> newTris = new List<int>();
+
+        for (int i = 0; i < subTriangles.Count; i++)
+        {
+            int oldIdx = subTriangles[i];
+            if (!remap.TryGetValue(oldIdx, out int newIdx))
+            {
+                newIdx = newVerts.Count;
+                remap[oldIdx] = newIdx;
+                newVerts.Add(srcVerts[oldIdx]);
+                if (srcNorms != null && srcNorms.Length > oldIdx) newNorms.Add(srcNorms[oldIdx]);
+                if (srcUVs != null && srcUVs.Length > oldIdx) newUVs.Add(srcUVs[oldIdx]);
+            }
+            newTris.Add(newIdx);
+        }
+
+        Mesh mesh = new Mesh();
+        mesh.name = "FracturedGlassPart";
+        mesh.SetVertices(newVerts);
+        if (newNorms.Count == newVerts.Count) mesh.SetNormals(newNorms);
+        else mesh.RecalculateNormals();
+        if (newUVs.Count == newVerts.Count) mesh.SetUVs(0, newUVs);
+        mesh.SetTriangles(newTris, 0);
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    private void SpawnSharpGlassShards(Vector3 crackWorldPos, Vector3 crackWorldNorm)
+    {
+        Material glassMat = glassRenderer != null ? glassRenderer.sharedMaterial : null;
+#if UNITY_EDITOR
+        if (glassMat == null) glassMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/glass.mat");
+#endif
+
+        int shardCount = 14;
         for (int i = 0; i < shardCount; i++)
         {
-            GameObject shard = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            shard.name = $"GlassShard_{name}_{i}";
-            shard.transform.position = crackWorldPos + Random.insideUnitSphere * 0.02f;
-
-            // Thin angular splinter shape
-            float sx = Random.Range(0.015f, 0.040f);
-            float sy = Random.Range(0.030f, 0.075f);
-            float sz = Random.Range(0.006f, 0.018f);
-            shard.transform.localScale = new Vector3(sx, sy, sz);
+            GameObject shard = new GameObject($"GlassShard_{name}_{i}");
+            shard.transform.position = crackWorldPos + Random.insideUnitSphere * 0.025f;
             shard.transform.rotation = Random.rotation;
 
-            if (glassMat != null) shard.GetComponent<Renderer>().sharedMaterial = glassMat;
+            MeshFilter mf = shard.AddComponent<MeshFilter>();
+            mf.sharedMesh = CreateGlassShardMesh();
+
+            MeshRenderer mr = shard.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = glassMat;
 
             Rigidbody rb = shard.AddComponent<Rigidbody>();
-            rb.mass = 0.08f;
-            Vector3 blastDir = (crackWorldNorm + Random.insideUnitSphere * 0.55f).normalized;
-            float blastSpeed = Random.Range(1.2f, 2.8f);
-            rb.linearVelocity = blastDir * blastSpeed + (currentVelocity * 0.5f);
-            rb.angularVelocity = Random.insideUnitSphere * Random.Range(15f, 40f);
+            rb.mass = 0.04f;
+            Vector3 blastDir = (crackWorldNorm * 1.9f + Random.insideUnitSphere * 0.75f).normalized;
+            float blastSpeed = Random.Range(1.4f, 3.2f);
+            rb.linearVelocity = blastDir * blastSpeed + (currentVelocity * 0.4f);
+            rb.angularVelocity = Random.insideUnitSphere * Random.Range(20f, 60f);
 
+            shard.AddComponent<BoxCollider>();
             spawnedShards.Add(shard);
         }
     }
 
+    private static Mesh CreateGlassShardMesh()
+    {
+        Mesh mesh = new Mesh();
+        mesh.name = "SharpGlassShard";
+
+        float length = Random.Range(0.035f, 0.075f);
+        float width = Random.Range(0.012f, 0.030f);
+        float thickness = Random.Range(0.003f, 0.006f);
+
+        Vector3 v0 = new Vector3(0f, length * 0.7f, 0f);
+        Vector3 v1 = new Vector3(-width * 0.5f, -length * 0.3f, 0f);
+        Vector3 v2 = new Vector3(width * 0.5f + Random.Range(-0.004f, 0.004f), -length * 0.3f + Random.Range(-0.008f, 0.008f), 0f);
+
+        float ht = thickness * 0.5f;
+        Vector3[] verts = new Vector3[6]
+        {
+            new Vector3(v0.x, v0.y, ht),
+            new Vector3(v1.x, v1.y, ht),
+            new Vector3(v2.x, v2.y, ht),
+            new Vector3(v0.x, v0.y, -ht),
+            new Vector3(v1.x, v1.y, -ht),
+            new Vector3(v2.x, v2.y, -ht)
+        };
+
+        int[] tris = new int[]
+        {
+            0, 1, 2, // front
+            3, 5, 4, // back
+            0, 3, 4, 0, 4, 1, // side 1
+            1, 4, 5, 1, 5, 2, // side 2
+            2, 5, 3, 2, 3, 0  // side 3
+        };
+
+        mesh.vertices = verts;
+        mesh.triangles = tris;
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    private void CreateSpiderwebFracture(Vector3 crackPos, Vector3 crackNorm)
+    {
+        if (spiderwebCrackObj != null)
+        {
+            if (Application.isPlaying) Destroy(spiderwebCrackObj);
+            else DestroyImmediate(spiderwebCrackObj);
+        }
+
+        spiderwebCrackObj = new GameObject("SpiderwebGlassFracture");
+        spiderwebCrackObj.transform.SetParent(transform);
+        spiderwebCrackObj.transform.position = crackPos + crackNorm * 0.002f;
+        spiderwebCrackObj.transform.rotation = Quaternion.LookRotation(crackNorm);
+
+        Material crackLineMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+        crackLineMat.color = new Color(0.96f, 0.98f, 1.0f, 0.9f);
+
+        Vector3 tangentX = Vector3.Cross(crackNorm, Vector3.up);
+        if (tangentX.sqrMagnitude < 0.001f) tangentX = Vector3.Cross(crackNorm, Vector3.right);
+        tangentX.Normalize();
+        Vector3 tangentY = Vector3.Cross(crackNorm, tangentX).normalized;
+
+        int numRays = 8;
+        for (int r = 0; r < numRays; r++)
+        {
+            float angle = (r / (float)numRays) * Mathf.PI * 2f + Random.Range(-0.15f, 0.15f);
+            Vector3 dir = (tangentX * Mathf.Cos(angle) + tangentY * Mathf.Sin(angle)).normalized;
+
+            GameObject rayObj = new GameObject($"FractureRay_{r}");
+            rayObj.transform.SetParent(spiderwebCrackObj.transform);
+            LineRenderer lr = rayObj.AddComponent<LineRenderer>();
+            lr.useWorldSpace = true;
+            lr.material = crackLineMat;
+            lr.startWidth = 0.0025f;
+            lr.endWidth = 0.0008f;
+            lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+            const int rayPts = 4;
+            lr.positionCount = rayPts;
+            Vector3 curPt = crackPos;
+            float rayLen = Random.Range(0.06f, 0.13f);
+            float step = rayLen / (rayPts - 1);
+
+            for (int p = 0; p < rayPts; p++)
+            {
+                lr.SetPosition(p, curPt);
+                Vector3 jitter = (tangentX * Random.Range(-0.006f, 0.006f) + tangentY * Random.Range(-0.006f, 0.006f));
+                curPt += (dir * step) + jitter;
+            }
+        }
+    }
+
+    private void CreateFluidPuddle(Vector3 impactFloorPos, Color col)
+    {
+        if (fluidPuddleObj != null) return;
+
+        fluidPuddleObj = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        fluidPuddleObj.name = "FluidOutflowPuddle";
+        fluidPuddleObj.transform.position = new Vector3(impactFloorPos.x, impactFloorPos.y + 0.001f, impactFloorPos.z);
+        fluidPuddleObj.transform.localScale = new Vector3(0.05f, 0.001f, 0.05f);
+        DestroyImmediate(fluidPuddleObj.GetComponent<Collider>());
+
+        var puddleMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        puddleMat.color = col;
+        puddleMat.SetFloat("_Smoothness", 0.95f);
+        fluidPuddleObj.GetComponent<Renderer>().material = puddleMat;
+    }
+
     public void CleanupShards()
     {
+        CleanupAllFractureObjects();
+    }
+
+    public void CleanupAllFractureObjects()
+    {
+        if (spawnedFractureObjects != null)
+        {
+            for (int i = 0; i < spawnedFractureObjects.Count; i++)
+            {
+                if (spawnedFractureObjects[i] != null)
+                {
+                    if (Application.isPlaying) Destroy(spawnedFractureObjects[i]);
+                    else DestroyImmediate(spawnedFractureObjects[i]);
+                }
+            }
+            spawnedFractureObjects.Clear();
+        }
+
         if (spawnedShards != null)
         {
             for (int i = 0; i < spawnedShards.Count; i++)
@@ -581,6 +886,25 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
                 }
             }
             spawnedShards.Clear();
+        }
+
+        if (spiderwebCrackObj != null)
+        {
+            if (Application.isPlaying) Destroy(spiderwebCrackObj);
+            else DestroyImmediate(spiderwebCrackObj);
+            spiderwebCrackObj = null;
+        }
+
+        if (fluidPuddleObj != null)
+        {
+            if (Application.isPlaying) Destroy(fluidPuddleObj);
+            else DestroyImmediate(fluidPuddleObj);
+            fluidPuddleObj = null;
+        }
+
+        if (glassRenderer != null)
+        {
+            glassRenderer.enabled = true;
         }
     }
 
@@ -718,6 +1042,8 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
                     main.startColor = col;
                     if (!splashParticles.isPlaying) splashParticles.Play();
                 }
+
+                CreateFluidPuddle(currentPos, col);
                 break;
             }
 
@@ -1064,28 +1390,14 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
             }
         }
 
-        // 2. Crack Visual Transform (fissure decal / indicator)
-        if (crackVisualTransform == null)
+        // 2. Clean up any legacy quad decals
+        Transform existingCrack = transform.Find("CrackFractureVisual");
+        if (existingCrack != null)
         {
-            Transform existingCrack = transform.Find("CrackFractureVisual");
-            if (existingCrack != null) crackVisualTransform = existingCrack;
-            else
-            {
-                GameObject crackObj = GameObject.CreatePrimitive(PrimitiveType.Quad);
-                crackObj.name = "CrackFractureVisual";
-                crackObj.transform.SetParent(transform);
-                crackObj.transform.localPosition = crackLocalPosition;
-                crackObj.transform.localRotation = Quaternion.LookRotation(crackLocalNormal);
-                crackObj.transform.localScale = new Vector3(0.045f, 0.045f, 0.045f);
-                DestroyImmediate(crackObj.GetComponent<Collider>());
-                crackVisualTransform = crackObj.transform;
-
-                Material crackMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-                crackMat.color = new Color(0.95f, 0.2f, 0.1f, 1f); // Emissive crack seam
-                crackObj.GetComponent<Renderer>().sharedMaterial = crackMat;
-                crackObj.SetActive(isCracked);
-            }
+            if (Application.isPlaying) Destroy(existingCrack.gameObject);
+            else DestroyImmediate(existingCrack.gameObject);
         }
+        crackVisualTransform = null;
 
         // 3. Splash Particles
         if (splashParticles == null)
