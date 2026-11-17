@@ -227,17 +227,45 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
 
     public void CacheReferences()
     {
-        if (fluidRenderer == null)
+        var childFluid = transform.Find("Fluid");
+        if (childFluid != null)
         {
-            var childFluid = transform.Find("Fluid");
-            if (childFluid != null) fluidRenderer = childFluid.GetComponent<Renderer>();
-            if (fluidRenderer == null) fluidRenderer = GetComponentInChildren<Renderer>();
+            fluidRenderer = childFluid.GetComponentInChildren<Renderer>();
         }
 
-        if (glassRenderer == null)
+        var childGlass = transform.Find("Glass");
+        if (childGlass != null)
         {
-            var childGlass = transform.Find("Glass");
-            if (childGlass != null) glassRenderer = childGlass.GetComponent<Renderer>();
+            glassRenderer = childGlass.GetComponentInChildren<Renderer>();
+        }
+
+        if (fluidRenderer == null)
+        {
+            var rends = GetComponentsInChildren<Renderer>();
+            foreach (var r in rends)
+            {
+                if (r != glassRenderer && !r.name.Contains("Glass") && !r.name.Contains("Plinth") && !r.name.Contains("Jet") && !r.name.Contains("Crack"))
+                {
+                    fluidRenderer = r;
+                    break;
+                }
+            }
+        }
+
+        // Ensure Glass ALWAYS maintains the glass material
+        if (glassRenderer != null)
+        {
+#if UNITY_EDITOR
+            if (glassRenderer.sharedMaterial == null || !glassRenderer.sharedMaterial.name.ToLower().Contains("glass"))
+            {
+                var glassMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/glass.mat");
+                if (glassMat != null)
+                {
+                    if (Application.isPlaying) glassRenderer.material = glassMat;
+                    else glassRenderer.sharedMaterial = glassMat;
+                }
+            }
+#endif
         }
 
         if (fluidRenderer != null)
@@ -439,6 +467,7 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
     public void TriggerCrack()
     {
         isCracked = true;
+        EnsureJetVisuals();
         if (crackVisualTransform != null) crackVisualTransform.gameObject.SetActive(true);
     }
 
@@ -535,11 +564,16 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         float flowRateM3PerSec = crackAreaM2 * outwardJetExitVelocity;
         outwardFlowRateMilliLitersPerSec = flowRateM3PerSec * 1_000_000f;
 
-        // 4. Mass Conservation Drainage
-        // delta_fill = Q * dt / TotalVolume
+        // 4. Mass Conservation Drainage with Visible Real-Time Decrement
         float totalVolM3 = Mathf.Max(0.0005f, totalEnclosedVolumeLiters * 0.001f);
-        float drainFraction = (flowRateM3PerSec / totalVolM3) * dt * leakDrainMultiplier;
+        float baseTorricelliDrainRate = (flowRateM3PerSec / totalVolM3) * leakDrainMultiplier;
+        // Visible physical efflux rate proportional to Torricelli exit velocity
+        float visibleDrainRate = Mathf.Max(baseTorricelliDrainRate, (outwardJetExitVelocity / 1.5f) * 0.055f * leakDrainMultiplier);
+        float drainFraction = visibleDrainRate * dt;
         fillAmount = Mathf.Clamp01(fillAmount - drainFraction);
+
+        // Immediately update cut plane so player visibly watches the liquid level drop
+        UpdateFillCutPlane(false);
 
         // 5. Render Physical Parabolic Outward Jet Stream
         RenderOutwardJet(crackWorldPos, crackWorldNorm, outwardJetExitVelocity, prof.streamColor);
@@ -586,6 +620,8 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
                 if (splashParticles != null)
                 {
                     splashParticles.transform.position = currentPos;
+                    var main = splashParticles.main;
+                    main.startColor = col;
                     if (!splashParticles.isPlaying) splashParticles.Play();
                 }
                 break;
@@ -595,8 +631,15 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
             currentPos += currentVel * timeStep;
         }
 
-        outwardJetLine.startWidth = Mathf.Clamp(crackApertureMm * 0.0025f, 0.005f, 0.025f);
-        outwardJetLine.endWidth = outwardJetLine.startWidth * 1.6f;
+        outwardJetLine.startWidth = Mathf.Clamp(crackApertureMm * 0.0025f, 0.008f, 0.028f);
+        outwardJetLine.endWidth = outwardJetLine.startWidth * 1.8f;
+        outwardJetLine.startColor = col;
+        outwardJetLine.endColor = new Color(col.r, col.g, col.b, col.a * 0.45f);
+
+        if (outwardJetLine.sharedMaterial != null)
+        {
+            outwardJetLine.sharedMaterial.color = col;
+        }
     }
 
     /// <summary>
@@ -918,7 +961,9 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
                 jetObj.transform.localPosition = Vector3.zero;
                 outwardJetLine = jetObj.AddComponent<LineRenderer>();
                 outwardJetLine.useWorldSpace = true;
-                outwardJetLine.material = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                var jetMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                jetMat.color = GetActiveProfile().streamColor;
+                outwardJetLine.material = jetMat;
                 outwardJetLine.startWidth = 0.012f;
                 outwardJetLine.endWidth = 0.022f;
                 outwardJetLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -966,6 +1011,7 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
                 main.startSize = 0.015f;
                 main.simulationSpace = ParticleSystemSimulationSpace.World;
                 main.playOnAwake = false;
+                main.startColor = GetActiveProfile().streamColor;
 
                 var emission = splashParticles.emission;
                 emission.rateOverTime = 30f;
@@ -973,6 +1019,12 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
                 var shape = splashParticles.shape;
                 shape.shapeType = ParticleSystemShapeType.Hemisphere;
                 shape.radius = 0.03f;
+
+                var pRend = splashParticles.GetComponent<ParticleSystemRenderer>();
+                if (pRend != null)
+                {
+                    pRend.material = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                }
 
                 splashParticles.Stop();
             }

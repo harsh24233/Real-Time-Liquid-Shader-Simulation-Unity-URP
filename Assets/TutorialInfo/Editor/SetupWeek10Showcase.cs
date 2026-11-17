@@ -168,15 +168,6 @@ public static class SetupWeek10Showcase
         {
             var cfg = configs[i];
 
-            GameObject glassModel = AssetDatabase.LoadAssetAtPath<GameObject>(cfg.glassModelPath);
-            GameObject fluidModel = AssetDatabase.LoadAssetAtPath<GameObject>(cfg.fluidModelPath);
-
-            if (glassModel == null || fluidModel == null)
-            {
-                Debug.LogError($"Could not load OBJ models for {cfg.name}: glass={glassModel}, fluid={fluidModel}");
-                continue;
-            }
-
             // Display plinth under each vessel
             GameObject plinth = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             plinth.name = $"Plinth_{cfg.name}";
@@ -184,74 +175,32 @@ public static class SetupWeek10Showcase
             plinth.transform.position = new Vector3(cfg.pos.x, -0.075f, cfg.pos.z);
             plinth.transform.localScale = new Vector3(0.28f, 0.015f, 0.28f);
 
-            // Container Root
-            GameObject containerRoot = new GameObject(cfg.name);
-            containerRoot.transform.SetParent(week10Root.transform);
-            containerRoot.transform.position = cfg.pos;
-            containerRoot.transform.rotation = Quaternion.identity;
+            string prefabPath = $"{prefabsDir}/{cfg.name}.prefab";
+            GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            GameObject containerRoot;
 
-            // Outer Glass Enclosure
-            GameObject glassObj = Object.Instantiate(glassModel, containerRoot.transform);
-            glassObj.name = "Glass";
-            glassObj.transform.localPosition = Vector3.zero;
-            glassObj.transform.localRotation = Quaternion.identity;
-            glassObj.transform.localScale = Vector3.one;
-
-            Renderer glassRend = glassObj.GetComponentInChildren<Renderer>();
-            if (glassRend != null && glassMat != null)
+            if (prefabAsset != null)
             {
-                glassRend.sharedMaterial = glassMat;
-            }
-
-            // Inner Fluid Volume
-            GameObject fluidObj = Object.Instantiate(fluidModel, containerRoot.transform);
-            fluidObj.name = "Fluid";
-            fluidObj.transform.localPosition = Vector3.zero;
-            fluidObj.transform.localRotation = Quaternion.identity;
-            fluidObj.transform.localScale = Vector3.one;
-
-            Renderer fluidRend = fluidObj.GetComponentInChildren<Renderer>();
-            if (fluidRend != null && cfg.fluidMat != null)
-            {
-                fluidRend.sharedMaterial = cfg.fluidMat;
-            }
-
-            // Box Collider for Interaction & Gizmo Drag Authority
-            BoxCollider box = containerRoot.AddComponent<BoxCollider>();
-            if (glassRend != null)
-            {
-                Bounds b = glassRend.bounds;
-                Vector3 s = containerRoot.transform.InverseTransformVector(b.size);
-                box.size = new Vector3(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z));
-                box.size = Vector3.Max(box.size, new Vector3(0.35f, 0.50f, 0.35f));
+                containerRoot = (GameObject)PrefabUtility.InstantiatePrefab(prefabAsset, week10Root.transform);
+                containerRoot.name = cfg.name;
+                containerRoot.transform.position = cfg.pos;
+                containerRoot.transform.rotation = Quaternion.identity;
             }
             else
             {
-                box.size = new Vector3(0.40f, 0.55f, 0.40f);
+                Debug.LogError($"SetupWeek10Showcase: Could not find prefab at {prefabPath}");
+                continue;
             }
 
-            // Attach Week10FluidCrackingFlowController
-            Week10FluidCrackingFlowController controller = containerRoot.AddComponent<Week10FluidCrackingFlowController>();
+            Week10FluidCrackingFlowController controller = containerRoot.GetComponent<Week10FluidCrackingFlowController>();
+            if (controller != null)
+            {
+                controller.CacheReferences();
+                controller.fillAmount = cfg.initialFill;
+                controller.UpdateFillCutPlane(true);
+            }
 
-            // Configure via SerializedObject
-            SerializedObject so = new SerializedObject(controller);
-            so.FindProperty("fluidRenderer").objectReferenceValue = fluidRend;
-            so.FindProperty("glassRenderer").objectReferenceValue = glassRend;
-            so.FindProperty("fluidType").enumValueIndex = (int)cfg.fluidType;
-            so.FindProperty("structureType").enumValueIndex = (int)cfg.structType;
-            so.FindProperty("fillAmount").floatValue = cfg.initialFill;
-            so.ApplyModifiedPropertiesWithoutUndo();
-
-            // Apply physical properties
-            controller.ApplyFluidPreset(cfg.fluidType);
-            controller.ApplyStructurePreset(cfg.structType);
-            controller.fillAmount = cfg.initialFill;
-            controller.UpdateFillCutPlane(true);
-
-            // Save Prefab
-            string prefabPath = $"{prefabsDir}/{cfg.name}.prefab";
-            PrefabUtility.SaveAsPrefabAssetAndConnect(containerRoot, prefabPath, InteractionMode.AutomatedAction);
-            Debug.Log($"Created Week 10 Prefab ({i + 1}/{configs.Length}): {prefabPath}");
+            Debug.Log($"Placed Week 10 Vessel ({i + 1}/{configs.Length}): {cfg.name}");
         }
 
         // 6. Update ShowcaseCameraController
