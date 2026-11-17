@@ -136,6 +136,96 @@ public class ShowcaseCameraController : MonoBehaviour
     private static Texture2D lineTex;
     private Rect hudRect = new Rect(16, 52, 385, 520);
 
+    // DPI & Resolution Scaled GUI Styles
+    private GUIStyle bottomBtnStyle = null;
+    private GUIStyle bottomActionBtnStyle = null;
+    private GUIStyle bottomRestoreBtnStyle = null;
+    private GUIStyle bottomToggleBtnStyle = null;
+    private GUIStyle bottomRestartBtnStyle = null;
+    private GUIStyle bottomBadgeTitleStyle = null;
+    private GUIStyle bottomBadgeSubStyle = null;
+    private GUIStyle topBtnStyle = null;
+    private GUIStyle topStatusLabelStyle = null;
+    private float lastUiScale = -1f;
+
+    private void EnsureScaledGUIStyles(float scale)
+    {
+        if (bottomBtnStyle != null && Mathf.Approximately(lastUiScale, scale)) return;
+        lastUiScale = scale;
+
+        int baseBtnFont = Mathf.Clamp(Mathf.RoundToInt(15f * scale), 15, 24);
+        int actionBtnFont = Mathf.Clamp(Mathf.RoundToInt(16f * scale), 16, 26);
+        int topBtnFont = Mathf.Clamp(Mathf.RoundToInt(13f * scale), 13, 20);
+        int titleFont = Mathf.Clamp(Mathf.RoundToInt(15f * scale), 15, 24);
+        int subFont = Mathf.Clamp(Mathf.RoundToInt(13f * scale), 13, 19);
+
+        bottomBtnStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize = baseBtnFont,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter
+        };
+
+        bottomActionBtnStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize = actionBtnFont,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter
+        };
+
+        bottomRestoreBtnStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize = actionBtnFont,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter
+        };
+
+        bottomToggleBtnStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize = baseBtnFont,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter
+        };
+
+        bottomRestartBtnStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize = baseBtnFont,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter
+        };
+
+        bottomBadgeTitleStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = titleFont,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleLeft
+        };
+        bottomBadgeTitleStyle.normal.textColor = Color.white;
+
+        bottomBadgeSubStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = subFont,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleLeft
+        };
+        bottomBadgeSubStyle.normal.textColor = new Color(0.45f, 0.85f, 1f);
+
+        topBtnStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize = topBtnFont,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter
+        };
+
+        topStatusLabelStyle = new GUIStyle(GUI.skin.box)
+        {
+            fontSize = topBtnFont,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter
+        };
+        topStatusLabelStyle.normal.textColor = Color.white;
+    }
+
     private void Awake()
     {
         Instance = this;
@@ -889,6 +979,9 @@ public class ShowcaseCameraController : MonoBehaviour
     {
         if (!Application.isPlaying) return;
 
+        float uiScale = Mathf.Clamp(Screen.height / 1080f, 1.15f, 2.2f);
+        EnsureScaledGUIStyles(uiScale);
+
         VesselEntry sel = GetSelectedVessel();
         if (showGizmos && sel != null && sel.Transform != null)
         {
@@ -896,35 +989,41 @@ public class ShowcaseCameraController : MonoBehaviour
         }
 
         // Top Control Bar: [👁 HIDE/SHOW CONTROLS] button + Quick Camera View Presets
-        GUILayout.BeginArea(new Rect(16, 10, Screen.width - 32, 36));
+        float topBarH = 42f * uiScale;
+        float topBtnH = 34f * uiScale;
+        GUILayout.BeginArea(new Rect(16, 10, Screen.width - 32, topBarH));
         GUILayout.BeginHorizontal();
 
         GUI.backgroundColor = showHUD ? new Color(0.25f, 0.5f, 0.85f) : new Color(0.2f, 0.75f, 0.35f);
-        if (GUILayout.Button(showHUD ? "<b>👁 HIDE CONTROLS (H)</b>" : "<b>👁 SHOW CONTROLS (H)</b>", GUILayout.Width(170), GUILayout.Height(30)))
+        if (GUILayout.Button(showHUD ? "<b>👁 HIDE CONTROLS (H)</b>" : "<b>👁 SHOW CONTROLS (H)</b>", topBtnStyle, GUILayout.Width(220 * uiScale), GUILayout.Height(topBtnH)))
         {
             showHUD = !showHUD;
         }
         GUI.backgroundColor = Color.white;
 
-        GUILayout.Space(8);
-        if (GUILayout.Button("Line View [F7]", GUILayout.Width(105), GUILayout.Height(30))) SetViewMode(CameraViewMode.Week10_EnclosedCrackingLine);
-        if (GUILayout.Button("Overview [F1]", GUILayout.Width(105), GUILayout.Height(30))) SetViewMode(CameraViewMode.TieredOverview);
+        GUILayout.Space(8 * uiScale);
+        if (GUILayout.Button("Line View [F7]", topBtnStyle, GUILayout.Width(130 * uiScale), GUILayout.Height(topBtnH))) SetViewMode(CameraViewMode.Week10_EnclosedCrackingLine);
+        if (GUILayout.Button("Overview [F1]", topBtnStyle, GUILayout.Width(130 * uiScale), GUILayout.Height(topBtnH))) SetViewMode(CameraViewMode.TieredOverview);
 
         GUI.backgroundColor = showGizmos ? new Color(0.9f, 0.7f, 0.2f) : Color.white;
-        if (GUILayout.Button(showGizmos ? "Gizmos: ON [G]" : "Gizmos: OFF [G]", GUILayout.Width(115), GUILayout.Height(30))) showGizmos = !showGizmos;
+        if (GUILayout.Button(showGizmos ? "Gizmos: ON [G]" : "Gizmos: OFF [G]", topBtnStyle, GUILayout.Width(145 * uiScale), GUILayout.Height(topBtnH))) showGizmos = !showGizmos;
         GUI.backgroundColor = Color.white;
 
         GUILayout.FlexibleSpace();
-        GUILayout.Label($"<b>Active Mode:</b> {currentMode} | <b>WASD:</b> Move Cam | <b>Right-Click Drag:</b> Free Look", GUI.skin.box);
+        GUILayout.Label($"<b>Active Mode:</b> {currentMode} | <b>WASD:</b> Move Cam | <b>Right-Click Drag:</b> Free Look", topStatusLabelStyle, GUILayout.Height(topBtnH));
         GUILayout.EndHorizontal();
         GUILayout.EndArea();
 
         // Dedicated Floating Bottom Action Bar for Week 10 Cracking, Outflow & Reset
-        DrawBottomActionBar(sel);
+        DrawBottomActionBar(sel, uiScale);
 
         if (!showHUD) return;
 
-        GUI.backgroundColor = new Color(0.08f, 0.10f, 0.14f, 0.92f);
+        float hudW = Mathf.Clamp(460f * uiScale, 460f, 620f);
+        float hudH = Mathf.Clamp(580f * uiScale, 560f, Screen.height - 120f * uiScale);
+        hudRect = new Rect(16, 56f * uiScale, hudW, hudH);
+
+        GUI.backgroundColor = new Color(0.08f, 0.10f, 0.14f, 0.94f);
         GUILayout.BeginArea(hudRect, GUI.skin.box);
         GUI.backgroundColor = Color.white;
 
@@ -1169,22 +1268,24 @@ public class ShowcaseCameraController : MonoBehaviour
         GUILayout.EndArea();
     }
 
-    private void DrawBottomActionBar(VesselEntry sel)
+    private void DrawBottomActionBar(VesselEntry sel, float uiScale)
     {
-        float barWidth = Mathf.Min(840f, Screen.width - 32f);
-        float barHeight = 56f;
+        float barWidth = Mathf.Min(1180f * uiScale, Screen.width - 32f);
+        float barHeight = 64f * uiScale;
         float barX = (Screen.width - barWidth) * 0.5f;
-        float barY = Screen.height - barHeight - 12f;
+        float barY = Screen.height - barHeight - (14f * uiScale);
         Rect bottomRect = new Rect(barX, barY, barWidth, barHeight);
 
-        GUI.backgroundColor = new Color(0.07f, 0.09f, 0.13f, 0.95f);
+        float btnH = 54f * uiScale;
+
+        GUI.backgroundColor = new Color(0.06f, 0.08f, 0.12f, 0.96f);
         GUILayout.BeginArea(bottomRect, GUI.skin.box);
         GUI.backgroundColor = Color.white;
 
         GUILayout.BeginHorizontal();
 
         // Prev Vessel
-        if (GUILayout.Button("<b>◀ PREV</b>", GUILayout.Width(75), GUILayout.Height(44)))
+        if (GUILayout.Button("<b>◀ PREV</b>", bottomBtnStyle, GUILayout.Width(100 * uiScale), GUILayout.Height(btnH)))
         {
             CycleVessel(-1);
         }
@@ -1192,9 +1293,9 @@ public class ShowcaseCameraController : MonoBehaviour
         // Active Vessel Name Badge
         string vesselName = sel != null ? sel.Name : "Showcase Line";
         string fluidName = sel != null ? sel.GetFluidName() : "7 Enclosed Vessels";
-        GUILayout.BeginVertical(GUILayout.Width(170));
-        GUILayout.Label($"<b>{vesselName}</b>", GUI.skin.label);
-        GUILayout.Label($"<color=#77CCFF>{fluidName}</color>", GUI.skin.label);
+        GUILayout.BeginVertical(GUILayout.Width(220 * uiScale));
+        GUILayout.Label($"<b>{vesselName}</b>", bottomBadgeTitleStyle);
+        GUILayout.Label($"<color=#77CCFF>{fluidName}</color>", bottomBadgeSubStyle);
         GUILayout.EndVertical();
 
         // Main Cracking / Shatter Outflow Action Button
@@ -1208,8 +1309,8 @@ public class ShowcaseCameraController : MonoBehaviour
         {
             if (w10.isCracked)
             {
-                GUI.backgroundColor = new Color(0.2f, 0.85f, 0.45f);
-                if (GUILayout.Button("<b>🔄 RESTORE & SEAL OBJECT</b>", GUILayout.Height(44), GUILayout.ExpandWidth(true)))
+                GUI.backgroundColor = new Color(0.2f, 0.88f, 0.45f);
+                if (GUILayout.Button("<b>🔄 RESTORE & SEAL OBJECT</b>", bottomRestoreBtnStyle, GUILayout.Height(btnH), GUILayout.ExpandWidth(true)))
                 {
                     w10.RepairCrack();
                 }
@@ -1218,7 +1319,7 @@ public class ShowcaseCameraController : MonoBehaviour
             else
             {
                 GUI.backgroundColor = new Color(1.0f, 0.28f, 0.18f);
-                if (GUILayout.Button("<b>💥 BREAK & SHATTER OBJECT (FLUID OUTFLOW)</b>", GUILayout.Height(44), GUILayout.ExpandWidth(true)))
+                if (GUILayout.Button("<b>💥 BREAK & SHATTER OBJECT (FLUID OUTFLOW)</b>", bottomActionBtnStyle, GUILayout.Height(btnH), GUILayout.ExpandWidth(true)))
                 {
                     w10.TriggerCrack();
                 }
@@ -1226,8 +1327,8 @@ public class ShowcaseCameraController : MonoBehaviour
             }
 
             // Quick Complete Fill Toggle Button
-            GUI.backgroundColor = w10.fillAmount >= 0.99f ? new Color(0.2f, 0.8f, 0.95f) : Color.white;
-            if (GUILayout.Button(w10.fillAmount >= 0.99f ? "<b>100% FULL</b>" : "<b>50% FILL</b>", GUILayout.Width(95), GUILayout.Height(44)))
+            GUI.backgroundColor = w10.fillAmount >= 0.99f ? new Color(0.2f, 0.82f, 0.98f) : Color.white;
+            if (GUILayout.Button(w10.fillAmount >= 0.99f ? "<b>100% FULL</b>" : "<b>50% FILL</b>", bottomToggleBtnStyle, GUILayout.Width(130 * uiScale), GUILayout.Height(btnH)))
             {
                 w10.fillAmount = w10.fillAmount >= 0.99f ? 0.50f : 1.0f;
                 w10.UpdateFillCutPlane(false);
@@ -1236,21 +1337,21 @@ public class ShowcaseCameraController : MonoBehaviour
         }
         else
         {
-            if (GUILayout.Button("<b>SELECT A VESSEL TO BREAK</b>", GUILayout.Height(44), GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button("<b>SELECT A VESSEL TO BREAK</b>", bottomBtnStyle, GUILayout.Height(btnH), GUILayout.ExpandWidth(true)))
             {
                 SetViewMode(CameraViewMode.Week10_EnclosedCrackingLine);
             }
         }
 
         // Next Vessel
-        if (GUILayout.Button("<b>NEXT ▶</b>", GUILayout.Width(75), GUILayout.Height(44)))
+        if (GUILayout.Button("<b>NEXT ▶</b>", bottomBtnStyle, GUILayout.Width(100 * uiScale), GUILayout.Height(btnH)))
         {
             CycleVessel(1);
         }
 
         // Global Restart / Reset All Button
-        GUI.backgroundColor = new Color(0.85f, 0.25f, 0.25f);
-        if (GUILayout.Button("<b>↺ RESTART ALL</b>", GUILayout.Width(115), GUILayout.Height(44)))
+        GUI.backgroundColor = new Color(0.88f, 0.22f, 0.22f);
+        if (GUILayout.Button("<b>↺ RESTART ALL</b>", bottomRestartBtnStyle, GUILayout.Width(150 * uiScale), GUILayout.Height(btnH)))
         {
             RestartAllWeek10Vessels();
         }

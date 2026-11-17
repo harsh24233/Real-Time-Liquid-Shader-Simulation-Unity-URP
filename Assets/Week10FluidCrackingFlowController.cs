@@ -86,7 +86,7 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
     [Header("2. Complete Fill Pipeline (0% to 100%)")]
     [Range(0f, 1f)]
     [Tooltip("Normalized fluid volume fraction: 0.0 = completely evacuated, 1.0 = 100% completely filled and sealed.")]
-    public float fillAmount = 0.50f;
+    public float fillAmount = 1.0f;
 
     [Tooltip("Enable automated filling and draining cycle for testing.")]
     public bool enableAutoFillDrainCycle = false;
@@ -170,9 +170,13 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
     // Dynamic Shattered Shards, Physical Glass Parts & Restart Management
     private List<GameObject> spawnedShards = new List<GameObject>();
     private List<GameObject> spawnedFractureObjects = new List<GameObject>();
-    private GameObject spiderwebCrackObj = null;
     private GameObject fluidPuddleObj = null;
-    private float initialFillAmount = 0.50f;
+    private float initialFillAmount = 1.0f;
+
+    // Procedural Mesh Puncture & Orifice Lip Geometry
+    private Mesh originalGlassMesh = null;
+    private Vector3 orificeLipLocalPos = Vector3.zero;
+    private static Texture2D dropletTexture = null;
 
     // Pre-calibrated Week 10 Physical Profiles
     public static readonly Week10FluidProfile ProfilePetrol =
@@ -201,7 +205,8 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         lastPosition = transform.position;
         lastRotation = transform.rotation;
         propBlock = new MaterialPropertyBlock();
-        initialFillAmount = fillAmount;
+        initialFillAmount = 1.0f;
+        fillAmount = 1.0f;
         CacheReferences();
         ApplyFluidPreset(fluidType);
         ApplyStructurePreset(structureType);
@@ -211,7 +216,8 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
 
     private void Start()
     {
-        initialFillAmount = fillAmount;
+        initialFillAmount = 1.0f;
+        fillAmount = 1.0f;
         if (Application.isPlaying)
         {
             isCracked = false;
@@ -220,6 +226,7 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
             if (outwardJetLine != null) outwardJetLine.positionCount = 0;
             if (splashParticles != null) splashParticles.Stop();
         }
+        UpdateFillCutPlane(true);
     }
 
     private void OnEnable()
@@ -279,6 +286,15 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         // Ensure Glass ALWAYS maintains the glass material
         if (glassRenderer != null)
         {
+            if (originalGlassMesh == null)
+            {
+                var mf = glassRenderer.GetComponent<MeshFilter>();
+                if (mf != null && mf.sharedMesh != null)
+                {
+                    originalGlassMesh = mf.sharedMesh;
+                }
+            }
+
 #if UNITY_EDITOR
             if (glassRenderer.sharedMaterial == null || !glassRenderer.sharedMaterial.name.ToLower().Contains("glass"))
             {
@@ -492,8 +508,8 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
     }
 
     /// <summary>
-    /// Cracks and physically fractures the glass enclosure into separate parts,
-    /// bursting sharp shards outward and allowing fluid to gush out.
+    /// Cracks and physically punctures the glass enclosure, excising an irregular jagged hole,
+    /// generating beveled rim thickness, bursting sharp shards outward, and allowing hydrostatic outflow.
     /// </summary>
     [ContextMenu("Crack Enclosure")]
     public void TriggerCrack()
@@ -507,7 +523,6 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
 
         FractureGlassEnclosure(crackWorldPos, crackWorldNorm);
         SpawnSharpGlassShards(crackWorldPos, crackWorldNorm);
-        CreateSpiderwebFracture(crackWorldPos, crackWorldNorm);
     }
 
     /// <summary>
@@ -532,7 +547,7 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
     public void ResetVessel()
     {
         RepairCrack();
-        fillAmount = initialFillAmount > 0.001f ? initialFillAmount : 0.50f;
+        fillAmount = initialFillAmount > 0.001f ? initialFillAmount : 1.0f;
         wobbleX = 0f;
         wobbleZ = 0f;
         wobbleVelocityX = 0f;
@@ -549,141 +564,234 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         if (glassRenderer == null) return;
 
         MeshFilter mf = glassRenderer.GetComponent<MeshFilter>();
-        if (mf == null || mf.sharedMesh == null) return;
+        if (mf == null) return;
 
-        Mesh srcMesh = mf.sharedMesh;
-        Vector3[] verts = srcMesh.vertices;
-        int[] tris = srcMesh.triangles;
-        if (verts == null || verts.Length == 0 || tris == null || tris.Length == 0) return;
+        if (originalGlassMesh == null) originalGlassMesh = mf.sharedMesh;
+        if (originalGlassMesh == null) return;
 
-        // Find the vertex on the glass surface closest to crackLocalPosition
-        Vector3 breachCenter = crackLocalPosition;
+        Vector3[] srcVerts = originalGlassMesh.vertices;
+        Vector3[] srcNorms = originalGlassMesh.normals;
+        Vector2[] srcUVs = originalGlassMesh.uv;
+        int[] srcTris = originalGlassMesh.triangles;
+        if (srcVerts == null || srcVerts.Length == 0 || srcTris == null || srcTris.Length == 0) return;
+
+        // 1. Find vertex on glass surface closest to crackLocalPosition
+        Vector3 P0 = crackLocalPosition;
         float minDistSq = float.MaxValue;
-        for (int i = 0; i < verts.Length; i++)
+        for (int i = 0; i < srcVerts.Length; i++)
         {
-            float d = (verts[i] - crackLocalPosition).sqrMagnitude;
+            float d = (srcVerts[i] - crackLocalPosition).sqrMagnitude;
             if (d < minDistSq)
             {
                 minDistSq = d;
-                breachCenter = verts[i];
+                P0 = srcVerts[i];
             }
         }
 
-        // Partition triangles into:
-        // - Hole / blown-out fragment
-        // - Upper fractured section
-        // - Lower basin section
-        float boundsHeight = srcMesh.bounds.size.y;
-        float breachRadius = Mathf.Clamp(boundsHeight * 0.22f, 0.06f, 0.14f);
+        // 2. Define surface tangent coordinate frame
+        Vector3 N = crackLocalNormal.normalized;
+        Vector3 Tx = Vector3.Cross(N, Vector3.up);
+        if (Tx.sqrMagnitude < 0.001f) Tx = Vector3.Cross(N, Vector3.right);
+        Tx.Normalize();
+        Vector3 Ty = Vector3.Cross(N, Tx).normalized;
 
-        List<int> trisHole = new List<int>();
-        List<int> trisUpper = new List<int>();
-        List<int> trisLower = new List<int>();
+        // 3. Boolean-style triangle culling via noise-perturbed breach radius R(theta)
+        float boundsHeight = originalGlassMesh.bounds.size.y;
+        float R0 = Mathf.Clamp(boundsHeight * 0.16f, 0.045f, 0.075f);
+        float phi = 1.35f;
 
-        for (int i = 0; i < tris.Length; i += 3)
+        List<int> excisedTris = new List<int>();
+        List<int> retainedTris = new List<int>();
+
+        for (int i = 0; i < srcTris.Length; i += 3)
         {
-            Vector3 centroid = (verts[tris[i]] + verts[tris[i + 1]] + verts[tris[i + 2]]) / 3f;
-            float distFromBreach = Vector3.Distance(centroid, breachCenter);
+            Vector3 vA = srcVerts[srcTris[i]];
+            Vector3 vB = srcVerts[srcTris[i + 1]];
+            Vector3 vC = srcVerts[srcTris[i + 2]];
+            Vector3 centroid = (vA + vB + vC) / 3f;
 
-            if (distFromBreach <= breachRadius)
+            float u = Vector3.Dot(centroid - P0, Tx);
+            float v = Vector3.Dot(centroid - P0, Ty);
+            float theta = Mathf.Atan2(v, u);
+            float r = Mathf.Sqrt(u * u + v * v);
+
+            float rThreshold = R0 * (1f + 0.25f * Mathf.Sin(5f * theta + phi) + 0.15f * Mathf.Cos(9f * theta));
+
+            if (r < rThreshold)
             {
-                trisHole.Add(tris[i]);
-                trisHole.Add(tris[i + 1]);
-                trisHole.Add(tris[i + 2]);
-            }
-            else if (centroid.y > breachCenter.y + breachRadius * 0.15f)
-            {
-                trisUpper.Add(tris[i]);
-                trisUpper.Add(tris[i + 1]);
-                trisUpper.Add(tris[i + 2]);
+                excisedTris.Add(srcTris[i]);
+                excisedTris.Add(srcTris[i + 1]);
+                excisedTris.Add(srcTris[i + 2]);
             }
             else
             {
-                trisLower.Add(tris[i]);
-                trisLower.Add(tris[i + 1]);
-                trisLower.Add(tris[i + 2]);
+                retainedTris.Add(srcTris[i]);
+                retainedTris.Add(srcTris[i + 1]);
+                retainedTris.Add(srcTris[i + 2]);
             }
         }
 
+        // Safety fallback: ensure at least some triangles are excised
+        if (excisedTris.Count == 0)
+        {
+            for (int i = 0; i < Mathf.Min(srcTris.Length, 12); i++)
+            {
+                excisedTris.Add(srcTris[i]);
+            }
+        }
+
+        // 4. Find hole boundary rim directed edges in retained triangles
+        Dictionary<long, int> edgeDirectedMap = new Dictionary<long, int>();
+        for (int i = 0; i < retainedTris.Count; i += 3)
+        {
+            AddDirectedEdge(edgeDirectedMap, retainedTris[i], retainedTris[i + 1]);
+            AddDirectedEdge(edgeDirectedMap, retainedTris[i + 1], retainedTris[i + 2]);
+            AddDirectedEdge(edgeDirectedMap, retainedTris[i + 2], retainedTris[i]);
+        }
+
+        List<Vector2Int> boundaryEdges = new List<Vector2Int>();
+        HashSet<int> boundaryVertIndices = new HashSet<int>();
+        float searchRadius = R0 * 1.6f;
+
+        for (int i = 0; i < retainedTris.Count; i += 3)
+        {
+            CheckAndAddBoundaryEdge(retainedTris[i], retainedTris[i + 1], edgeDirectedMap, srcVerts, P0, searchRadius, boundaryEdges, boundaryVertIndices);
+            CheckAndAddBoundaryEdge(retainedTris[i + 1], retainedTris[i + 2], edgeDirectedMap, srcVerts, P0, searchRadius, boundaryEdges, boundaryVertIndices);
+            CheckAndAddBoundaryEdge(retainedTris[i + 2], retainedTris[i], edgeDirectedMap, srcVerts, P0, searchRadius, boundaryEdges, boundaryVertIndices);
+        }
+
+        // 5. Find lowest point on the breach rim in world space (P_orifice)
+        Vector3 lowestLip = P0;
+        float minWorldY = float.MaxValue;
+        foreach (int vIdx in boundaryVertIndices)
+        {
+            Vector3 wPos = transform.TransformPoint(srcVerts[vIdx]);
+            if (wPos.y < minWorldY)
+            {
+                minWorldY = wPos.y;
+                lowestLip = srcVerts[vIdx];
+            }
+        }
+        orificeLipLocalPos = lowestLip;
+
+        // 6. Generate beveled glass thickness rim (t = 4 mm extruded inward along -N)
+        float wallThickness = 0.004f;
+        List<Vector3> rimVerts = new List<Vector3>();
+        List<Vector3> rimNorms = new List<Vector3>();
+        List<Vector2> rimUVs = new List<Vector2>();
+        List<int> rimTris = new List<int>();
+
+        for (int e = 0; e < boundaryEdges.Count; e++)
+        {
+            int iA = boundaryEdges[e].x;
+            int iB = boundaryEdges[e].y;
+
+            Vector3 vA = srcVerts[iA];
+            Vector3 vB = srcVerts[iB];
+            Vector3 vA_in = vA - N * wallThickness;
+            Vector3 vB_in = vB - N * wallThickness;
+
+            Vector3 edgeDir = (vB - vA).normalized;
+            Vector3 rimNorm = Vector3.Cross(edgeDir, -N).normalized;
+
+            int baseIdx = rimVerts.Count;
+            rimVerts.Add(vA);
+            rimVerts.Add(vB);
+            rimVerts.Add(vA_in);
+            rimVerts.Add(vB_in);
+
+            rimNorms.Add(rimNorm);
+            rimNorms.Add(rimNorm);
+            rimNorms.Add(rimNorm);
+            rimNorms.Add(rimNorm);
+
+            Vector2 uvA = srcUVs != null && srcUVs.Length > iA ? srcUVs[iA] : Vector2.zero;
+            Vector2 uvB = srcUVs != null && srcUVs.Length > iB ? srcUVs[iB] : Vector2.right;
+            rimUVs.Add(uvA);
+            rimUVs.Add(uvB);
+            rimUVs.Add(uvA);
+            rimUVs.Add(uvB);
+
+            // Two triangles for beveled quad
+            rimTris.Add(baseIdx + 0);
+            rimTris.Add(baseIdx + 1);
+            rimTris.Add(baseIdx + 3);
+
+            rimTris.Add(baseIdx + 0);
+            rimTris.Add(baseIdx + 3);
+            rimTris.Add(baseIdx + 2);
+        }
+
+        // 7. Construct and assign the punctured mesh directly to container
+        Mesh puncturedMesh = BuildPuncturedMesh(originalGlassMesh, retainedTris, rimVerts, rimNorms, rimUVs, rimTris);
+        mf.sharedMesh = puncturedMesh;
+        glassRenderer.enabled = true;
+
+        // 8. Create excised blown-out wall fragment with physics
         Material glassMat = glassRenderer.sharedMaterial;
 #if UNITY_EDITOR
         if (glassMat == null) glassMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/glass.mat");
 #endif
-
-        Transform gT = glassRenderer.transform;
-
-        // Part A: Blown-Out Wall Chunk
-        Mesh meshHole = CreateSubmesh(srcMesh, trisHole);
-        if (meshHole != null)
+        Mesh chunkMesh = BuildExcisedChunkMesh(originalGlassMesh, excisedTris, N, wallThickness);
+        if (chunkMesh != null)
         {
-            GameObject partHole = new GameObject($"{name}_BlownOutGlassChunk");
-            partHole.transform.SetParent(transform.parent != null ? transform.parent : null);
-            partHole.transform.position = gT.position;
-            partHole.transform.rotation = gT.rotation;
-            partHole.transform.localScale = gT.lossyScale;
+            GameObject chunkObj = new GameObject($"{name}_BlownOutGlassChunk");
+            chunkObj.transform.SetParent(transform.parent != null ? transform.parent : null);
+            chunkObj.transform.position = glassRenderer.transform.position;
+            chunkObj.transform.rotation = glassRenderer.transform.rotation;
+            chunkObj.transform.localScale = glassRenderer.transform.lossyScale;
 
-            MeshFilter pmf = partHole.AddComponent<MeshFilter>();
-            pmf.sharedMesh = meshHole;
-            MeshRenderer pmr = partHole.AddComponent<MeshRenderer>();
-            pmr.sharedMaterial = glassMat;
+            MeshFilter cmf = chunkObj.AddComponent<MeshFilter>();
+            cmf.sharedMesh = chunkMesh;
+            MeshRenderer cmr = chunkObj.AddComponent<MeshRenderer>();
+            cmr.sharedMaterial = glassMat;
 
-            Rigidbody rb = partHole.AddComponent<Rigidbody>();
-            rb.mass = 0.15f;
+            Rigidbody rb = chunkObj.AddComponent<Rigidbody>();
+            rb.mass = 0.12f;
             Vector3 blastDir = (crackWorldNorm * 2.2f + Vector3.up * 0.65f + Random.insideUnitSphere * 0.35f).normalized;
             rb.linearVelocity = blastDir * Random.Range(1.8f, 2.8f);
-            rb.angularVelocity = Random.insideUnitSphere * Random.Range(12f, 28f);
+            rb.angularVelocity = Random.insideUnitSphere * Random.Range(15f, 35f);
 
-            partHole.AddComponent<BoxCollider>();
-            spawnedFractureObjects.Add(partHole);
+            chunkObj.AddComponent<BoxCollider>();
+            spawnedFractureObjects.Add(chunkObj);
         }
 
-        // Part B: Upper Broken Section (Tilted and separated along fracture plane)
-        Mesh meshUpper = CreateSubmesh(srcMesh, trisUpper);
-        if (meshUpper != null)
-        {
-            GameObject partUpper = new GameObject($"{name}_UpperBrokenSection");
-            partUpper.transform.SetParent(transform);
-            Vector3 tiltAxis = Vector3.Cross(crackLocalNormal, Vector3.up).normalized;
-            if (tiltAxis.sqrMagnitude < 0.01f) tiltAxis = Vector3.forward;
-            partUpper.transform.localPosition = new Vector3(-crackLocalNormal.x * 0.018f, 0.022f, -crackLocalNormal.z * 0.018f);
-            partUpper.transform.localRotation = Quaternion.AngleAxis(Random.Range(5.5f, 9.5f), tiltAxis);
-            partUpper.transform.localScale = gT.localScale;
-
-            MeshFilter pmf = partUpper.AddComponent<MeshFilter>();
-            pmf.sharedMesh = meshUpper;
-            MeshRenderer pmr = partUpper.AddComponent<MeshRenderer>();
-            pmr.sharedMaterial = glassMat;
-            spawnedFractureObjects.Add(partUpper);
-        }
-
-        // Part C: Lower Basin Section
-        Mesh meshLower = CreateSubmesh(srcMesh, trisLower);
-        if (meshLower != null)
-        {
-            GameObject partLower = new GameObject($"{name}_LowerBasinSection");
-            partLower.transform.SetParent(transform);
-            partLower.transform.localPosition = gT.localPosition;
-            partLower.transform.localRotation = gT.localRotation;
-            partLower.transform.localScale = gT.localScale;
-
-            MeshFilter pmf = partLower.AddComponent<MeshFilter>();
-            pmf.sharedMesh = meshLower;
-            MeshRenderer pmr = partLower.AddComponent<MeshRenderer>();
-            pmr.sharedMaterial = glassMat;
-            spawnedFractureObjects.Add(partLower);
-        }
-
-        // Hide intact glass shell so broken parts are displayed
-        glassRenderer.enabled = false;
+        // 9. Generate surface-conforming micro-fractures strictly on mesh triangles
+        CreateSurfaceConformingFractures(originalGlassMesh, boundaryVertIndices, P0, R0);
     }
 
-    private static Mesh CreateSubmesh(Mesh sourceMesh, List<int> subTriangles)
+    private static long MakeDirectedEdgeKey(int a, int b)
     {
-        if (subTriangles == null || subTriangles.Count == 0) return null;
+        return ((long)a << 32) | (long)(uint)b;
+    }
 
-        Vector3[] srcVerts = sourceMesh.vertices;
-        Vector3[] srcNorms = sourceMesh.normals;
-        Vector2[] srcUVs = sourceMesh.uv;
+    private static void AddDirectedEdge(Dictionary<long, int> map, int a, int b)
+    {
+        long key = MakeDirectedEdgeKey(a, b);
+        if (map.ContainsKey(key)) map[key]++;
+        else map[key] = 1;
+    }
+
+    private static void CheckAndAddBoundaryEdge(int a, int b, Dictionary<long, int> directedMap, Vector3[] verts, Vector3 center, float searchRadius, List<Vector2Int> boundaryEdges, HashSet<int> boundaryVerts)
+    {
+        long oppositeKey = MakeDirectedEdgeKey(b, a);
+        if (!directedMap.ContainsKey(oppositeKey))
+        {
+            Vector3 mid = (verts[a] + verts[b]) * 0.5f;
+            if (Vector3.Distance(mid, center) <= searchRadius)
+            {
+                boundaryEdges.Add(new Vector2Int(a, b));
+                boundaryVerts.Add(a);
+                boundaryVerts.Add(b);
+            }
+        }
+    }
+
+    private static Mesh BuildPuncturedMesh(Mesh srcMesh, List<int> retainedTris, List<Vector3> rimVerts, List<Vector3> rimNorms, List<Vector2> rimUVs, List<int> rimTris)
+    {
+        Vector3[] srcVerts = srcMesh.vertices;
+        Vector3[] srcNorms = srcMesh.normals;
+        Vector2[] srcUVs = srcMesh.uv;
 
         Dictionary<int, int> remap = new Dictionary<int, int>();
         List<Vector3> newVerts = new List<Vector3>();
@@ -691,9 +799,9 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         List<Vector2> newUVs = new List<Vector2>();
         List<int> newTris = new List<int>();
 
-        for (int i = 0; i < subTriangles.Count; i++)
+        for (int i = 0; i < retainedTris.Count; i++)
         {
-            int oldIdx = subTriangles[i];
+            int oldIdx = retainedTris[i];
             if (!remap.TryGetValue(oldIdx, out int newIdx))
             {
                 newIdx = newVerts.Count;
@@ -705,8 +813,18 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
             newTris.Add(newIdx);
         }
 
+        int rimBaseOffset = newVerts.Count;
+        newVerts.AddRange(rimVerts);
+        newNorms.AddRange(rimNorms);
+        newUVs.AddRange(rimUVs);
+
+        for (int i = 0; i < rimTris.Count; i++)
+        {
+            newTris.Add(rimTris[i] + rimBaseOffset);
+        }
+
         Mesh mesh = new Mesh();
-        mesh.name = "FracturedGlassPart";
+        mesh.name = "PuncturedGlassVessel";
         mesh.SetVertices(newVerts);
         if (newNorms.Count == newVerts.Count) mesh.SetNormals(newNorms);
         else mesh.RecalculateNormals();
@@ -714,6 +832,168 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         mesh.SetTriangles(newTris, 0);
         mesh.RecalculateBounds();
         return mesh;
+    }
+
+    private static Mesh BuildExcisedChunkMesh(Mesh srcMesh, List<int> excisedTris, Vector3 normal, float thickness)
+    {
+        if (excisedTris == null || excisedTris.Count == 0) return null;
+
+        Vector3[] srcVerts = srcMesh.vertices;
+        Vector3[] srcNorms = srcMesh.normals;
+        Vector2[] srcUVs = srcMesh.uv;
+
+        Dictionary<int, int> remap = new Dictionary<int, int>();
+        List<Vector3> newVerts = new List<Vector3>();
+        List<Vector3> newNorms = new List<Vector3>();
+        List<Vector2> newUVs = new List<Vector2>();
+        List<int> newTris = new List<int>();
+
+        for (int i = 0; i < excisedTris.Count; i++)
+        {
+            int oldIdx = excisedTris[i];
+            if (!remap.TryGetValue(oldIdx, out int newIdx))
+            {
+                newIdx = newVerts.Count;
+                remap[oldIdx] = newIdx;
+                newVerts.Add(srcVerts[oldIdx]);
+                if (srcNorms != null && srcNorms.Length > oldIdx) newNorms.Add(srcNorms[oldIdx]);
+                if (srcUVs != null && srcUVs.Length > oldIdx) newUVs.Add(srcUVs[oldIdx]);
+            }
+            newTris.Add(newIdx);
+        }
+
+        // Extrude back face with thickness
+        int frontCount = newVerts.Count;
+        for (int i = 0; i < frontCount; i++)
+        {
+            newVerts.Add(newVerts[i] - normal * thickness);
+            newNorms.Add(-normal);
+            newUVs.Add(newUVs[i]);
+        }
+
+        // Add back face triangles with reversed winding
+        int triCount = newTris.Count;
+        for (int i = 0; i < triCount; i += 3)
+        {
+            newTris.Add(newTris[i] + frontCount);
+            newTris.Add(newTris[i + 2] + frontCount);
+            newTris.Add(newTris[i + 1] + frontCount);
+        }
+
+        Mesh mesh = new Mesh();
+        mesh.name = "ExcisedGlassChunk";
+        mesh.SetVertices(newVerts);
+        if (newNorms.Count == newVerts.Count) mesh.SetNormals(newNorms);
+        else mesh.RecalculateNormals();
+        if (newUVs.Count == newVerts.Count) mesh.SetUVs(0, newUVs);
+        mesh.SetTriangles(newTris, 0);
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    private void CreateSurfaceConformingFractures(Mesh mesh, HashSet<int> boundaryVerts, Vector3 breachCenter, float breachRadius)
+    {
+        if (boundaryVerts == null || boundaryVerts.Count == 0) return;
+
+        Vector3[] verts = mesh.vertices;
+        Vector3[] norms = mesh.normals;
+        int[] tris = mesh.triangles;
+
+        // Build vertex adjacency graph from mesh triangles
+        Dictionary<int, List<int>> neighbors = new Dictionary<int, List<int>>();
+        for (int i = 0; i < tris.Length; i += 3)
+        {
+            AddNeighbor(neighbors, tris[i], tris[i + 1]);
+            AddNeighbor(neighbors, tris[i + 1], tris[i + 2]);
+            AddNeighbor(neighbors, tris[i + 2], tris[i]);
+        }
+
+        GameObject microFractureHolder = new GameObject("SurfaceConformingFractures");
+        microFractureHolder.transform.SetParent(transform);
+        microFractureHolder.transform.localPosition = Vector3.zero;
+        microFractureHolder.transform.localRotation = Quaternion.identity;
+        microFractureHolder.transform.localScale = Vector3.one;
+
+        Material crackLineMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+        crackLineMat.color = new Color(0.96f, 0.98f, 1.0f, 0.85f);
+
+        int branchCount = 0;
+        int maxBranches = 8;
+        float maxDist = breachRadius * 2.2f;
+
+        foreach (int startVert in boundaryVerts)
+        {
+            if (branchCount >= maxBranches) break;
+
+            List<Vector3> linePts = new List<Vector3>();
+            int current = startVert;
+            Vector3 startNrm = norms != null && norms.Length > current ? norms[current] : Vector3.up;
+            linePts.Add(verts[current] + startNrm * 0.0006f);
+
+            HashSet<int> visited = new HashSet<int> { current };
+
+            for (int step = 0; step < 4; step++)
+            {
+                if (!neighbors.TryGetValue(current, out List<int> adjList)) break;
+
+                int bestNext = -1;
+                float bestDist = Vector3.Distance(verts[current], breachCenter);
+
+                for (int n = 0; n < adjList.Count; n++)
+                {
+                    int neighbor = adjList[n];
+                    if (visited.Contains(neighbor)) continue;
+
+                    float d = Vector3.Distance(verts[neighbor], breachCenter);
+                    if (d > bestDist && d <= maxDist)
+                    {
+                        bestDist = d;
+                        bestNext = neighbor;
+                    }
+                }
+
+                if (bestNext == -1) break;
+
+                visited.Add(bestNext);
+                current = bestNext;
+                Vector3 nrm = norms != null && norms.Length > current ? norms[current] : Vector3.up;
+                linePts.Add(verts[current] + nrm * 0.0006f);
+            }
+
+            if (linePts.Count >= 2)
+            {
+                GameObject lineObj = new GameObject($"FractureTrace_{branchCount}");
+                lineObj.transform.SetParent(microFractureHolder.transform);
+                LineRenderer lr = lineObj.AddComponent<LineRenderer>();
+                lr.useWorldSpace = false;
+                lr.material = crackLineMat;
+                lr.startWidth = 0.0022f;
+                lr.endWidth = 0.0006f;
+                lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                lr.positionCount = linePts.Count;
+                lr.SetPositions(linePts.ToArray());
+                branchCount++;
+            }
+        }
+
+        spawnedFractureObjects.Add(microFractureHolder);
+    }
+
+    private static void AddNeighbor(Dictionary<int, List<int>> map, int a, int b)
+    {
+        if (!map.TryGetValue(a, out List<int> listA))
+        {
+            listA = new List<int>();
+            map[a] = listA;
+        }
+        if (!listA.Contains(b)) listA.Add(b);
+
+        if (!map.TryGetValue(b, out List<int> listB))
+        {
+            listB = new List<int>();
+            map[b] = listB;
+        }
+        if (!listB.Contains(a)) listB.Add(a);
     }
 
     private void SpawnSharpGlassShards(Vector3 crackWorldPos, Vector3 crackWorldNorm)
@@ -788,70 +1068,28 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         return mesh;
     }
 
-    private void CreateSpiderwebFracture(Vector3 crackPos, Vector3 crackNorm)
-    {
-        if (spiderwebCrackObj != null)
-        {
-            if (Application.isPlaying) Destroy(spiderwebCrackObj);
-            else DestroyImmediate(spiderwebCrackObj);
-        }
-
-        spiderwebCrackObj = new GameObject("SpiderwebGlassFracture");
-        spiderwebCrackObj.transform.SetParent(transform);
-        spiderwebCrackObj.transform.position = crackPos + crackNorm * 0.002f;
-        spiderwebCrackObj.transform.rotation = Quaternion.LookRotation(crackNorm);
-
-        Material crackLineMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-        crackLineMat.color = new Color(0.96f, 0.98f, 1.0f, 0.9f);
-
-        Vector3 tangentX = Vector3.Cross(crackNorm, Vector3.up);
-        if (tangentX.sqrMagnitude < 0.001f) tangentX = Vector3.Cross(crackNorm, Vector3.right);
-        tangentX.Normalize();
-        Vector3 tangentY = Vector3.Cross(crackNorm, tangentX).normalized;
-
-        int numRays = 8;
-        for (int r = 0; r < numRays; r++)
-        {
-            float angle = (r / (float)numRays) * Mathf.PI * 2f + Random.Range(-0.15f, 0.15f);
-            Vector3 dir = (tangentX * Mathf.Cos(angle) + tangentY * Mathf.Sin(angle)).normalized;
-
-            GameObject rayObj = new GameObject($"FractureRay_{r}");
-            rayObj.transform.SetParent(spiderwebCrackObj.transform);
-            LineRenderer lr = rayObj.AddComponent<LineRenderer>();
-            lr.useWorldSpace = true;
-            lr.material = crackLineMat;
-            lr.startWidth = 0.0025f;
-            lr.endWidth = 0.0008f;
-            lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-
-            const int rayPts = 4;
-            lr.positionCount = rayPts;
-            Vector3 curPt = crackPos;
-            float rayLen = Random.Range(0.06f, 0.13f);
-            float step = rayLen / (rayPts - 1);
-
-            for (int p = 0; p < rayPts; p++)
-            {
-                lr.SetPosition(p, curPt);
-                Vector3 jitter = (tangentX * Random.Range(-0.006f, 0.006f) + tangentY * Random.Range(-0.006f, 0.006f));
-                curPt += (dir * step) + jitter;
-            }
-        }
-    }
-
     private void CreateFluidPuddle(Vector3 impactFloorPos, Color col)
     {
-        if (fluidPuddleObj != null) return;
+        if (fluidPuddleObj != null)
+        {
+            float currentScale = fluidPuddleObj.transform.localScale.x;
+            if (currentScale < 0.45f)
+            {
+                float newScale = Mathf.MoveTowards(currentScale, 0.45f, Time.deltaTime * 0.06f);
+                fluidPuddleObj.transform.localScale = new Vector3(newScale, 0.001f, newScale);
+            }
+            return;
+        }
 
         fluidPuddleObj = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         fluidPuddleObj.name = "FluidOutflowPuddle";
-        fluidPuddleObj.transform.position = new Vector3(impactFloorPos.x, impactFloorPos.y + 0.001f, impactFloorPos.z);
-        fluidPuddleObj.transform.localScale = new Vector3(0.05f, 0.001f, 0.05f);
+        fluidPuddleObj.transform.position = new Vector3(impactFloorPos.x, impactFloorPos.y + 0.0015f, impactFloorPos.z);
+        fluidPuddleObj.transform.localScale = new Vector3(0.06f, 0.001f, 0.06f);
         DestroyImmediate(fluidPuddleObj.GetComponent<Collider>());
 
         var puddleMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
         puddleMat.color = col;
-        puddleMat.SetFloat("_Smoothness", 0.95f);
+        puddleMat.SetFloat("_Smoothness", 0.96f);
         fluidPuddleObj.GetComponent<Renderer>().material = puddleMat;
     }
 
@@ -888,13 +1126,6 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
             spawnedShards.Clear();
         }
 
-        if (spiderwebCrackObj != null)
-        {
-            if (Application.isPlaying) Destroy(spiderwebCrackObj);
-            else DestroyImmediate(spiderwebCrackObj);
-            spiderwebCrackObj = null;
-        }
-
         if (fluidPuddleObj != null)
         {
             if (Application.isPlaying) Destroy(fluidPuddleObj);
@@ -902,10 +1133,19 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
             fluidPuddleObj = null;
         }
 
+        // Restore original unpunctured mesh to glass container
         if (glassRenderer != null)
         {
+            var mf = glassRenderer.GetComponent<MeshFilter>();
+            if (mf != null && originalGlassMesh != null)
+            {
+                mf.sharedMesh = originalGlassMesh;
+            }
             glassRenderer.enabled = true;
         }
+
+        if (outwardJetLine != null) outwardJetLine.positionCount = 0;
+        if (splashParticles != null && splashParticles.isPlaying) splashParticles.Stop();
     }
 
     [ContextMenu("Trigger Impulse Slosh")]
@@ -924,7 +1164,8 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
     }
 
     /// <summary>
-    /// Simulates Torricelli hydrostatic orifice discharge and real-time outward jet flow.
+    /// Simulates Torricelli hydrostatic orifice discharge with strict equilibrium cutoff.
+    /// Liquid drains only down to y_surface == y_orifice. Tilting automatically resumes outflow!
     /// </summary>
     private void SimulateFractureOutflow(float dt)
     {
@@ -939,29 +1180,23 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
             return;
         }
 
-        // 1. Calculate World Positions of Crack and Liquid Surface
-        Vector3 crackWorldPos = transform.TransformPoint(crackLocalPosition);
-        Vector3 crackWorldNorm = transform.TransformDirection(crackLocalNormal).normalized;
-
+        // 1. Calculate World Positions of Liquid Surface and Orifice Lip
         float adaptedLocalY = ComputeGeometryAdaptedSurfaceY(fillAmount);
-        Vector3 liquidCenterLocal = new Vector3(0f, adaptedLocalY, 0f);
-        Vector3 liquidCenterWorld = transform.TransformPoint(liquidCenterLocal);
+        Vector3 liquidSurfaceWorld = transform.TransformPoint(new Vector3(0f, adaptedLocalY, 0f));
+        float ySurface = liquidSurfaceWorld.y;
 
-        // Plane normal with wobble & slump tilts
-        float totalWobbleX = wobbleX + gelClingX;
-        float totalWobbleZ = wobbleZ + gelClingZ;
-        Vector3 planeNormalLocal = new Vector3(totalWobbleZ, 1f, -totalWobbleX).normalized;
-        Vector3 planeNormalWorld = transform.TransformDirection(planeNormalLocal).normalized;
+        Vector3 orificeWorldPos = transform.TransformPoint(orificeLipLocalPos);
+        Vector3 orificeWorldNorm = transform.TransformDirection(crackLocalNormal).normalized;
+        float yOrifice = orificeWorldPos.y;
 
-        // Vertical distance from crack to liquid surface in gravity direction
-        // delta_h = distance above crack along gravity
-        float dotHeight = Vector3.Dot(liquidCenterWorld - crackWorldPos, Vector3.up);
-        hydrostaticHeadMeters = Mathf.Max(0f, dotHeight);
-        isCrackSubmerged = (dotHeight > 0.001f);
+        // Hydrostatic Head Delta h
+        float deltaH = ySurface - yOrifice;
+        hydrostaticHeadMeters = Mathf.Max(0f, deltaH);
 
-        if (!isCrackSubmerged)
+        // Strict Equilibrium Stop Condition: if liquid level drops to or below the orifice lip, STOP!
+        if (deltaH <= 0.0005f)
         {
-            // Crack is above the liquid surface! Pressurized jet cuts off.
+            isCrackSubmerged = false;
             outwardJetExitVelocity = 0f;
             outwardFlowRateMilliLitersPerSec = 0f;
             if (outwardJetLine != null) outwardJetLine.positionCount = 0;
@@ -969,50 +1204,43 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
             return;
         }
 
-        // 2. Torricelli's Law with Viscous Discharge Coefficient
-        // v_exit = Cd * sqrt(2 * g * delta_h)
-        Week10FluidProfile prof = GetActiveProfile();
-        float g = 9.81f;
-        float cd = prof.dischargeCoeffCd;
-        outwardJetExitVelocity = cd * Mathf.Sqrt(2f * g * hydrostaticHeadMeters);
+        isCrackSubmerged = true;
 
-        // 3. Volumetric Flow Rate: Q = A_crack * v_exit
+        // 2. Torricelli Velocity with Smooth Meniscus Trickle Attenuation as deltaH -> 0
+        Week10FluidProfile prof = GetActiveProfile();
+        float trickleFactor = Mathf.Clamp01(deltaH / 0.025f);
+        float cd = prof.dischargeCoeffCd;
+        outwardJetExitVelocity = cd * Mathf.Sqrt(2f * 9.81f * deltaH) * (0.25f + 0.75f * trickleFactor);
+
+        // 3. Volumetric Flow Rate & Drainage
         float crackRadiusM = (crackApertureMm * 0.001f) * 0.5f;
         float crackAreaM2 = Mathf.PI * crackRadiusM * crackRadiusM;
         float flowRateM3PerSec = crackAreaM2 * outwardJetExitVelocity;
         outwardFlowRateMilliLitersPerSec = flowRateM3PerSec * 1_000_000f;
 
-        // 4. Mass Conservation Drainage with Visible Real-Time Decrement
         float totalVolM3 = Mathf.Max(0.0005f, totalEnclosedVolumeLiters * 0.001f);
-        float baseTorricelliDrainRate = (flowRateM3PerSec / totalVolM3) * leakDrainMultiplier;
-        // Visible physical efflux rate proportional to Torricelli exit velocity
-        float visibleDrainRate = Mathf.Max(baseTorricelliDrainRate, (outwardJetExitVelocity / 1.5f) * 0.055f * leakDrainMultiplier);
+        float baseDrainRate = (flowRateM3PerSec / totalVolM3) * leakDrainMultiplier;
+        float visibleDrainRate = Mathf.Max(baseDrainRate, (outwardJetExitVelocity / 1.5f) * 0.055f * leakDrainMultiplier);
         float drainFraction = visibleDrainRate * dt;
         fillAmount = Mathf.Clamp01(fillAmount - drainFraction);
 
-        // Immediately update cut plane so player visibly watches the liquid level drop
         UpdateFillCutPlane(false);
 
-        // 5. Render Physical Parabolic Outward Jet Stream
-        RenderOutwardJet(crackWorldPos, crackWorldNorm, outwardJetExitVelocity, prof.streamColor);
+        // 4. Parabolic Jet originating precisely at orifice lip
+        RenderOutwardJet(orificeWorldPos, orificeWorldNorm, outwardJetExitVelocity, prof.streamColor, trickleFactor);
     }
 
     /// <summary>
-    /// Renders a physical 3D parabolic fluid jet streaming outward from the crack under gravity.
+    /// Renders a physical 3D parabolic fluid jet streaming outward from the lower lip of the orifice.
     /// </summary>
-    private void RenderOutwardJet(Vector3 startPos, Vector3 outwardDir, float exitSpeed, Color col)
+    private void RenderOutwardJet(Vector3 startPos, Vector3 outwardDir, float exitSpeed, Color col, float trickleFactor)
     {
         if (outwardJetLine == null) return;
 
         const int numPoints = 22;
-        if (outwardJetLine.positionCount != numPoints)
-        {
-            outwardJetLine.positionCount = numPoints;
-        }
+        if (outwardJetLine.positionCount != numPoints) outwardJetLine.positionCount = numPoints;
 
-        // Initial velocity combining outward normal thrust and container kinematic momentum
         Vector3 initialVelocity = (outwardDir * exitSpeed) + (currentVelocity * 0.35f);
-        // Slightly bias downwards if fluid is heavy (Mercury)
         if (densityKgM3 > 5000f) initialVelocity.y -= 0.25f;
 
         float timeStep = 0.022f;
@@ -1020,7 +1248,6 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         Vector3 currentVel = initialVelocity;
         Vector3 gravity = new Vector3(0f, -9.81f, 0f);
 
-        // Floor collision level (shelf or ground)
         float floorY = transform.position.y - 0.25f;
 
         for (int i = 0; i < numPoints; i++)
@@ -1029,7 +1256,6 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
 
             if (currentPos.y <= floorY && i > 1)
             {
-                // Jet has impacted the shelf/ground surface
                 for (int j = i; j < numPoints; j++)
                 {
                     outwardJetLine.SetPosition(j, currentPos);
@@ -1043,7 +1269,15 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
                     if (!splashParticles.isPlaying) splashParticles.Play();
                 }
 
-                CreateFluidPuddle(currentPos, col);
+                // Raycast downward to accurately place expanding puddle on shelf/plinth
+                if (Physics.Raycast(currentPos + Vector3.up * 0.15f, Vector3.down, out RaycastHit hit, 1.5f))
+                {
+                    CreateFluidPuddle(hit.point, col);
+                }
+                else
+                {
+                    CreateFluidPuddle(currentPos, col);
+                }
                 break;
             }
 
@@ -1051,15 +1285,13 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
             currentPos += currentVel * timeStep;
         }
 
-        outwardJetLine.startWidth = Mathf.Clamp(crackApertureMm * 0.0025f, 0.008f, 0.028f);
+        float baseWidth = Mathf.Clamp(crackApertureMm * 0.0025f, 0.008f, 0.026f);
+        outwardJetLine.startWidth = baseWidth * (0.3f + 0.7f * trickleFactor);
         outwardJetLine.endWidth = outwardJetLine.startWidth * 1.8f;
         outwardJetLine.startColor = col;
         outwardJetLine.endColor = new Color(col.r, col.g, col.b, col.a * 0.45f);
 
-        if (outwardJetLine.sharedMaterial != null)
-        {
-            outwardJetLine.sharedMaterial.color = col;
-        }
+        if (outwardJetLine.sharedMaterial != null) outwardJetLine.sharedMaterial.color = col;
     }
 
     /// <summary>
@@ -1366,6 +1598,33 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         }
     }
 
+    private static Texture2D GetOrCreateDropletTexture()
+    {
+        if (dropletTexture != null) return dropletTexture;
+        int res = 64;
+        dropletTexture = new Texture2D(res, res, TextureFormat.RGBA32, false);
+        dropletTexture.name = "SoftDropletAlpha";
+        dropletTexture.wrapMode = TextureWrapMode.Clamp;
+        dropletTexture.filterMode = FilterMode.Bilinear;
+        Color[] pixels = new Color[res * res];
+        float center = (res - 1) * 0.5f;
+        for (int y = 0; y < res; y++)
+        {
+            for (int x = 0; x < res; x++)
+            {
+                float dx = (x - center) / center;
+                float dy = (y - center) / center;
+                float distSqr = dx * dx + dy * dy;
+                float alpha = Mathf.Clamp01(Mathf.Exp(-4f * distSqr));
+                if (distSqr > 1f) alpha = 0f;
+                pixels[y * res + x] = new Color(1f, 1f, 1f, alpha);
+            }
+        }
+        dropletTexture.SetPixels(pixels);
+        dropletTexture.Apply();
+        return dropletTexture;
+    }
+
     private void EnsureJetVisuals()
     {
         // 1. LineRenderer for continuous physical jet stream
@@ -1383,6 +1642,13 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
                 outwardJetLine.useWorldSpace = true;
                 var jetMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
                 jetMat.color = GetActiveProfile().streamColor;
+                jetMat.SetFloat("_Surface", 1f);
+                jetMat.SetFloat("_Blend", 0f);
+                jetMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                jetMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                jetMat.SetInt("_ZWrite", 0);
+                jetMat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+                jetMat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
                 outwardJetLine.material = jetMat;
                 outwardJetLine.startWidth = 0.012f;
                 outwardJetLine.endWidth = 0.022f;
@@ -1399,7 +1665,7 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         }
         crackVisualTransform = null;
 
-        // 3. Splash Particles
+        // 3. Splash Particles (Circular Soft-Alpha Droplet Beads - zero white square quads)
         if (splashParticles == null)
         {
             Transform existingSplash = transform.Find("CrackSplashParticles");
@@ -1426,13 +1692,25 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
                 shape.shapeType = ParticleSystemShapeType.Hemisphere;
                 shape.radius = 0.03f;
 
-                var pRend = splashParticles.GetComponent<ParticleSystemRenderer>();
-                if (pRend != null)
-                {
-                    pRend.material = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-                }
-
                 splashParticles.Stop();
+            }
+        }
+
+        if (splashParticles != null)
+        {
+            var pRend = splashParticles.GetComponent<ParticleSystemRenderer>();
+            if (pRend != null && (pRend.sharedMaterial == null || pRend.sharedMaterial.mainTexture == null))
+            {
+                Material pMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                pMat.mainTexture = GetOrCreateDropletTexture();
+                pMat.SetFloat("_Surface", 1f);
+                pMat.SetFloat("_Blend", 0f);
+                pMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                pMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                pMat.SetInt("_ZWrite", 0);
+                pMat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+                pMat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                pRend.material = pMat;
             }
         }
     }
