@@ -1027,13 +1027,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1, z: -10}
+  m_LocalRotation: {x: 0.06975647, y: 0, z: 0, w: 0.9975641}
+  m_LocalPosition: {x: 0, y: 0.7, z: -4.75}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 8, y: 0, z: 0}
 --- !u!114 &330585547
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1091,22 +1091,22 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ShowcaseCameraController
   targetCamera: {fileID: 0}
-  currentMode: 0
+  currentMode: 1
   transitionSpeed: 4.5
   flySpeed: 5
   sprintMultiplier: 2.5
   lookSensitivity: 0.15
-  overviewPos: {x: 0, y: 1.5, z: -8.8}
-  overviewRot: {x: 8, y: 0, z: 0}
-  week10LinePos: {x: 0, y: 0.45, z: -3.4}
-  week10LineRot: {x: 4, y: 0, z: 0}
+  overviewPos: {x: 0, y: 1.8, z: -9}
+  overviewRot: {x: 9, y: 0, z: 0}
+  week10LinePos: {x: 0, y: 0.7, z: -4.75}
+  week10LineRot: {x: 8, y: 0, z: 0}
   week9LinePos: {x: 0, y: 0.45, z: -4.6}
   week9LineRot: {x: 4, y: 0, z: 0}
   week2LinePos: {x: 0, y: 0.85, z: -6.8}
   week2LineRot: {x: 5, y: 0, z: 0}
   week1LinePos: {x: 0, y: 1.35, z: -7.8}
   week1LineRot: {x: 4, y: 0, z: 0}
-  activeVesselIndex: 0
+  activeVesselIndex: -1
   week2Vessels:
   - {fileID: 4626224408635977275}
   - {fileID: 9147608172872851801}

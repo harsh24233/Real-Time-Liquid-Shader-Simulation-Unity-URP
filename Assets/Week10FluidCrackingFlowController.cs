@@ -1,8 +1,8 @@
-using System.Collections.Generic;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
 using UnityEngine;
+using System.Collections.Generic;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -162,20 +162,14 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
     private float outwardJetExitVelocity = 0f;
     private float outwardFlowRateMilliLitersPerSec = 0f;
 
-    [Header("Physical Breaking & Shatter Simulation")]
-    public bool isShattered = false;
-    [Range(6, 16)] public int targetShardCount = 10;
-    public float shatterExplosionForce = 2.8f;
-    public float shardMass = 0.12f;
-    [SerializeField] public float initialFillAmount = 0.65f;
-    private bool hasSavedInitialState = false;
-    private List<GameObject> activeShards = new List<GameObject>();
-    private GameObject shardsContainer;
-
     private MaterialPropertyBlock propBlock;
     private static readonly int WobbleXProp = Shader.PropertyToID("_WobbleX");
     private static readonly int WobbleZProp = Shader.PropertyToID("_WobbleZ");
     private static readonly int FloatFillProp = Shader.PropertyToID("_Float");
+
+    // Dynamic Shattered Shards & Restart Management
+    private List<GameObject> spawnedShards = new List<GameObject>();
+    private float initialFillAmount = 0.50f;
 
     // Pre-calibrated Week 10 Physical Profiles
     public static readonly Week10FluidProfile ProfilePetrol =
@@ -204,24 +198,25 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         lastPosition = transform.position;
         lastRotation = transform.rotation;
         propBlock = new MaterialPropertyBlock();
+        initialFillAmount = fillAmount;
         CacheReferences();
         ApplyFluidPreset(fluidType);
         ApplyStructurePreset(structureType);
         EnsureJetVisuals();
-
-        if (!hasSavedInitialState)
-        {
-            initialFillAmount = fillAmount;
-            hasSavedInitialState = true;
-        }
-
         UpdateFillCutPlane(true);
     }
 
     private void Start()
     {
-        // Whenever play starts, restore pristine unbroken state with full fluid
-        RestoreAndRepairVessel();
+        initialFillAmount = fillAmount;
+        if (Application.isPlaying)
+        {
+            isCracked = false;
+            CleanupShards();
+            if (crackVisualTransform != null) crackVisualTransform.gameObject.SetActive(false);
+            if (outwardJetLine != null) outwardJetLine.positionCount = 0;
+            if (splashParticles != null) splashParticles.Stop();
+        }
     }
 
     private void OnEnable()
@@ -487,292 +482,105 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
     }
 
     /// <summary>
-    /// Cracks and physically shatters the glass enclosure into tumbling 3D shards with outward fluid flow.
+    /// Cracks the enclosed system, causing outward fluid flow.
     /// </summary>
-    [ContextMenu("Break & Shatter Enclosure")]
-    public void TriggerCrackAndShatter()
+    [ContextMenu("Crack Enclosure")]
+    public void TriggerCrack()
     {
+        if (isCracked) return;
         isCracked = true;
         EnsureJetVisuals();
         if (crackVisualTransform != null) crackVisualTransform.gameObject.SetActive(true);
-        ShatterGlassIntoShards();
+        SpawnFractureShards();
     }
 
-    public void TriggerCrack() => TriggerCrackAndShatter();
-    public void TriggerStructuralCrack() => TriggerCrackAndShatter();
-
     /// <summary>
-    /// Restores the pristine sealed glass container, removes shards, and resets liquid to full.
+    /// Repairs and reseals the structural breach.
     /// </summary>
-    [ContextMenu("Restore & Repair Enclosure")]
-    public void RestoreAndRepairVessel()
+    [ContextMenu("Repair & Seal Enclosure")]
+    public void RepairCrack()
     {
-        CleanupShards();
-
-        if (glassRenderer != null)
-        {
-            glassRenderer.gameObject.SetActive(true);
-        }
-
         isCracked = false;
-        isShattered = false;
         isCrackSubmerged = false;
         hydrostaticHeadMeters = 0f;
         outwardJetExitVelocity = 0f;
         outwardFlowRateMilliLitersPerSec = 0f;
+        if (outwardJetLine != null) outwardJetLine.positionCount = 0;
+        if (splashParticles != null) splashParticles.Stop();
+        if (crackVisualTransform != null) crackVisualTransform.gameObject.SetActive(false);
+        CleanupShards();
+    }
 
-        fillAmount = initialFillAmount > 0.005f ? initialFillAmount : 0.65f;
+    public void TriggerStructuralCrack() => TriggerCrack();
+    public void RepairStructuralCrack() => RepairCrack();
 
+    public void ResetVessel()
+    {
+        RepairCrack();
+        fillAmount = initialFillAmount > 0.001f ? initialFillAmount : 0.50f;
         wobbleX = 0f;
         wobbleZ = 0f;
         wobbleVelocityX = 0f;
         wobbleVelocityZ = 0f;
-        gelHesitationTimer = 0f;
         gelClingX = 0f;
         gelClingZ = 0f;
-
-        if (outwardJetLine != null) outwardJetLine.positionCount = 0;
-        if (splashParticles != null) splashParticles.Stop();
-        if (crackVisualTransform != null) crackVisualTransform.gameObject.SetActive(false);
-
+        gelHesitationTimer = 0f;
         UpdateFillCutPlane(true);
     }
 
-    public void RepairCrack() => RestoreAndRepairVessel();
-    public void RepairStructuralCrack() => RestoreAndRepairVessel();
-
-    public void CleanupShards()
+    private void SpawnFractureShards()
     {
-        if (activeShards != null)
-        {
-            for (int i = 0; i < activeShards.Count; i++)
-            {
-                if (activeShards[i] != null)
-                {
-                    if (Application.isPlaying) Destroy(activeShards[i]);
-                    else DestroyImmediate(activeShards[i]);
-                }
-            }
-            activeShards.Clear();
-        }
-
-        if (shardsContainer != null)
-        {
-            if (Application.isPlaying) Destroy(shardsContainer);
-            else DestroyImmediate(shardsContainer);
-            shardsContainer = null;
-        }
-    }
-
-    /// <summary>
-    /// Fractures the glass shell into realistic physical 3D shards using Voronoi spatial triangle clustering.
-    /// </summary>
-    public void ShatterGlassIntoShards()
-    {
-        if (isShattered && activeShards != null && activeShards.Count > 0) return;
-
-        CacheReferences();
-        EnsureJetVisuals();
-
-        Mesh glassMesh = null;
-        Material glassMat = null;
-        if (glassRenderer != null)
-        {
-            MeshFilter mf = glassRenderer.GetComponent<MeshFilter>();
-            if (mf != null) glassMesh = mf.sharedMesh;
-            glassMat = glassRenderer.sharedMaterial;
-        }
-
-        if (glassMat == null)
-        {
-#if UNITY_EDITOR
-            glassMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/glass.mat");
-#endif
-        }
-
         CleanupShards();
-        shardsContainer = new GameObject($"{gameObject.name}_Shards");
-        shardsContainer.transform.position = transform.position;
-        shardsContainer.transform.rotation = transform.rotation;
 
         Vector3 crackWorldPos = transform.TransformPoint(crackLocalPosition);
         Vector3 crackWorldNorm = transform.TransformDirection(crackLocalNormal).normalized;
 
-        if (glassMesh != null && glassMesh.vertices != null && glassMesh.vertices.Length >= 4 && glassMesh.triangles != null && glassMesh.triangles.Length >= 3)
+        Material glassMat = null;
+        if (glassRenderer != null) glassMat = glassRenderer.sharedMaterial;
+#if UNITY_EDITOR
+        if (glassMat == null) glassMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/glass.mat");
+#endif
+
+        int shardCount = 7;
+        for (int i = 0; i < shardCount; i++)
         {
-            Vector3[] verts = glassMesh.vertices;
-            Vector3[] normals = glassMesh.normals;
-            Vector2[] uvs = glassMesh.uv;
-            int[] tris = glassMesh.triangles;
-            Bounds bounds = glassMesh.bounds;
+            GameObject shard = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            shard.name = $"GlassShard_{name}_{i}";
+            shard.transform.position = crackWorldPos + Random.insideUnitSphere * 0.02f;
 
-            int K = Mathf.Clamp(targetShardCount, 6, 16);
-            List<Vector3> seeds = new List<Vector3>();
+            // Thin angular splinter shape
+            float sx = Random.Range(0.015f, 0.040f);
+            float sy = Random.Range(0.030f, 0.075f);
+            float sz = Random.Range(0.006f, 0.018f);
+            shard.transform.localScale = new Vector3(sx, sy, sz);
+            shard.transform.rotation = Random.rotation;
 
-            // Concentrated seeds near crack rupture epicenter
-            for (int i = 0; i < 4; i++)
-            {
-                seeds.Add(crackLocalPosition + Random.insideUnitSphere * 0.09f);
-            }
-            // Distribute remaining seeds across the vessel envelope
-            for (int i = 4; i < K; i++)
-            {
-                seeds.Add(new Vector3(
-                    Random.Range(bounds.min.x, bounds.max.x),
-                    Random.Range(bounds.min.y, bounds.max.y),
-                    Random.Range(bounds.min.z, bounds.max.z)
-                ));
-            }
+            if (glassMat != null) shard.GetComponent<Renderer>().sharedMaterial = glassMat;
 
-            // Group triangles by closest seed
-            List<int>[] clusterTriangles = new List<int>[K];
-            for (int i = 0; i < K; i++) clusterTriangles[i] = new List<int>();
+            Rigidbody rb = shard.AddComponent<Rigidbody>();
+            rb.mass = 0.08f;
+            Vector3 blastDir = (crackWorldNorm + Random.insideUnitSphere * 0.55f).normalized;
+            float blastSpeed = Random.Range(1.2f, 2.8f);
+            rb.linearVelocity = blastDir * blastSpeed + (currentVelocity * 0.5f);
+            rb.angularVelocity = Random.insideUnitSphere * Random.Range(15f, 40f);
 
-            for (int t = 0; t < tris.Length; t += 3)
-            {
-                Vector3 c = (verts[tris[t]] + verts[tris[t + 1]] + verts[tris[t + 2]]) / 3f;
-                int bestK = 0;
-                float bestDistSq = float.MaxValue;
-                for (int s = 0; s < seeds.Count; s++)
-                {
-                    float dSq = (c - seeds[s]).sqrMagnitude;
-                    if (dSq < bestDistSq)
-                    {
-                        bestDistSq = dSq;
-                        bestK = s;
-                    }
-                }
-                clusterTriangles[bestK].Add(tris[t]);
-                clusterTriangles[bestK].Add(tris[t + 1]);
-                clusterTriangles[bestK].Add(tris[t + 2]);
-            }
-
-            // Build shard GameObjects for each cluster
-            for (int k = 0; k < K; k++)
-            {
-                List<int> cTris = clusterTriangles[k];
-                if (cTris.Count < 3) continue;
-
-                Dictionary<int, int> vertMap = new Dictionary<int, int>();
-                List<Vector3> shardVerts = new List<Vector3>();
-                List<Vector3> shardNorms = new List<Vector3>();
-                List<Vector2> shardUvs = new List<Vector2>();
-                List<int> shardIndices = new List<int>();
-
-                Vector3 centerSum = Vector3.zero;
-
-                for (int i = 0; i < cTris.Count; i++)
-                {
-                    int oldIdx = cTris[i];
-                    if (!vertMap.TryGetValue(oldIdx, out int newIdx))
-                    {
-                        newIdx = shardVerts.Count;
-                        vertMap[oldIdx] = newIdx;
-                        shardVerts.Add(verts[oldIdx]);
-                        shardNorms.Add(normals != null && oldIdx < normals.Length ? normals[oldIdx] : Vector3.up);
-                        shardUvs.Add(uvs != null && oldIdx < uvs.Length ? uvs[oldIdx] : Vector2.zero);
-                        centerSum += verts[oldIdx];
-                    }
-                    shardIndices.Add(newIdx);
-                }
-
-                if (shardVerts.Count < 3) continue;
-
-                Vector3 centerOfMass = centerSum / shardVerts.Count;
-                for (int i = 0; i < shardVerts.Count; i++)
-                {
-                    shardVerts[i] -= centerOfMass;
-                }
-
-                Mesh shardMesh = new Mesh();
-                shardMesh.name = $"ShardMesh_{k}";
-                shardMesh.SetVertices(shardVerts);
-                shardMesh.SetNormals(shardNorms);
-                shardMesh.SetUVs(0, shardUvs);
-                shardMesh.SetTriangles(shardIndices, 0);
-                shardMesh.RecalculateBounds();
-
-                GameObject shardGo = new GameObject($"GlassShard_{k}");
-                shardGo.transform.SetParent(shardsContainer.transform);
-                shardGo.transform.position = transform.TransformPoint(centerOfMass);
-                shardGo.transform.rotation = transform.rotation;
-                shardGo.transform.localScale = transform.lossyScale;
-
-                var filter = shardGo.AddComponent<MeshFilter>();
-                filter.sharedMesh = shardMesh;
-
-                var rend = shardGo.AddComponent<MeshRenderer>();
-                rend.sharedMaterial = glassMat != null ? glassMat : (glassRenderer != null ? glassRenderer.sharedMaterial : null);
-
-                // BoxCollider fitted to shard bounds
-                var col = shardGo.AddComponent<BoxCollider>();
-                Vector3 bSize = shardMesh.bounds.size;
-                col.size = new Vector3(Mathf.Max(bSize.x, 0.035f), Mathf.Max(bSize.y, 0.035f), Mathf.Max(bSize.z, 0.035f));
-
-                var rb = shardGo.AddComponent<Rigidbody>();
-                rb.mass = shardMass;
-                rb.interpolation = RigidbodyInterpolation.Interpolate;
-                rb.collisionDetectionMode = CollisionDetectionMode.Discrete;
-
-                // Explosive impulse directed outward from rupture epicenter
-                Vector3 shardWorldPos = shardGo.transform.position;
-                Vector3 fromEpicenter = (shardWorldPos - crackWorldPos);
-                if (fromEpicenter.sqrMagnitude < 0.0001f) fromEpicenter = crackWorldNorm;
-
-                Vector3 blastDir = (fromEpicenter.normalized * 0.75f + crackWorldNorm * 0.75f + Random.insideUnitSphere * 0.35f).normalized;
-                float blastSpeed = Random.Range(shatterExplosionForce * 0.75f, shatterExplosionForce * 1.35f);
-                rb.linearVelocity = blastDir * blastSpeed;
-                rb.angularVelocity = Random.insideUnitSphere * Random.Range(6f, 18f);
-
-                activeShards.Add(shardGo);
-            }
+            spawnedShards.Add(shard);
         }
-        else
-        {
-            GenerateProceduralBoxShards(crackWorldPos, crackWorldNorm, glassMat);
-        }
-
-        // Hide original intact glass enclosure
-        if (glassRenderer != null)
-        {
-            glassRenderer.gameObject.SetActive(false);
-        }
-
-        isCracked = true;
-        isShattered = true;
     }
 
-    private void GenerateProceduralBoxShards(Vector3 crackWorldPos, Vector3 crackWorldNorm, Material glassMat)
+    public void CleanupShards()
     {
-        Bounds b = glassRenderer != null ? glassRenderer.bounds : new Bounds(transform.position, Vector3.one * 0.3f);
-        Vector3 size = b.size;
-
-        for (int i = 0; i < 8; i++)
+        if (spawnedShards != null)
         {
-            GameObject shardGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            shardGo.name = $"GlassShard_Proc_{i}";
-            shardGo.transform.SetParent(shardsContainer.transform);
-
-            Vector3 offset = new Vector3(
-                Random.Range(-size.x * 0.4f, size.x * 0.4f),
-                Random.Range(-size.y * 0.4f, size.y * 0.4f),
-                Random.Range(-size.z * 0.4f, size.z * 0.4f)
-            );
-            shardGo.transform.position = transform.position + offset;
-            shardGo.transform.localScale = new Vector3(Random.Range(0.04f, 0.08f), Random.Range(0.04f, 0.08f), Random.Range(0.04f, 0.08f));
-            shardGo.transform.rotation = Random.rotation;
-
-            var rend = shardGo.GetComponent<Renderer>();
-            if (rend != null && glassMat != null) rend.sharedMaterial = glassMat;
-
-            var rb = shardGo.AddComponent<Rigidbody>();
-            rb.mass = shardMass;
-
-            Vector3 blastDir = ((shardGo.transform.position - crackWorldPos).normalized * 0.7f + crackWorldNorm * 0.8f + Random.insideUnitSphere * 0.3f).normalized;
-            rb.linearVelocity = blastDir * Random.Range(shatterExplosionForce * 0.8f, shatterExplosionForce * 1.3f);
-            rb.angularVelocity = Random.insideUnitSphere * Random.Range(6f, 16f);
-
-            activeShards.Add(shardGo);
+            for (int i = 0; i < spawnedShards.Count; i++)
+            {
+                if (spawnedShards[i] != null)
+                {
+                    if (Application.isPlaying) Destroy(spawnedShards[i]);
+                    else DestroyImmediate(spawnedShards[i]);
+                }
+            }
+            spawnedShards.Clear();
         }
     }
 
@@ -853,9 +661,8 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
         // 4. Mass Conservation Drainage with Visible Real-Time Decrement
         float totalVolM3 = Mathf.Max(0.0005f, totalEnclosedVolumeLiters * 0.001f);
         float baseTorricelliDrainRate = (flowRateM3PerSec / totalVolM3) * leakDrainMultiplier;
-        // Visible physical efflux rate proportional to Torricelli exit velocity, accelerated when shattered into pieces
-        float shatterMult = isShattered ? 2.4f : 1.0f;
-        float visibleDrainRate = Mathf.Max(baseTorricelliDrainRate, (outwardJetExitVelocity / 1.5f) * 0.075f * leakDrainMultiplier * shatterMult);
+        // Visible physical efflux rate proportional to Torricelli exit velocity
+        float visibleDrainRate = Mathf.Max(baseTorricelliDrainRate, (outwardJetExitVelocity / 1.5f) * 0.055f * leakDrainMultiplier);
         float drainFraction = visibleDrainRate * dt;
         fillAmount = Mathf.Clamp01(fillAmount - drainFraction);
 
@@ -918,9 +725,8 @@ public class Week10FluidCrackingFlowController : MonoBehaviour
             currentPos += currentVel * timeStep;
         }
 
-        float widthFactor = isShattered ? 2.5f : 1.0f;
-        outwardJetLine.startWidth = Mathf.Clamp(crackApertureMm * 0.0035f * widthFactor, 0.015f, 0.045f);
-        outwardJetLine.endWidth = outwardJetLine.startWidth * 2.2f;
+        outwardJetLine.startWidth = Mathf.Clamp(crackApertureMm * 0.0025f, 0.008f, 0.028f);
+        outwardJetLine.endWidth = outwardJetLine.startWidth * 1.8f;
         outwardJetLine.startColor = col;
         outwardJetLine.endColor = new Color(col.r, col.g, col.b, col.a * 0.45f);
 
@@ -1420,24 +1226,24 @@ public class Week10FluidCrackingFlowControllerEditor : Editor
         EditorGUILayout.Space(12);
         EditorGUILayout.LabelField("Week 10 Interactive Control Panel", EditorStyles.boldLabel);
 
-        // Break & Shatter / Restore Buttons
+        // Crack / Repair Buttons
         EditorGUILayout.BeginHorizontal();
-        if (!sim.isCracked && !sim.isShattered)
+        if (!sim.isCracked)
         {
-            GUI.backgroundColor = new Color(1f, 0.35f, 0.25f);
-            if (GUILayout.Button("💥 Break & Shatter Vessel (Fluid Outflow)", GUILayout.Height(36)))
+            GUI.backgroundColor = new Color(1f, 0.4f, 0.3f);
+            if (GUILayout.Button("Crack Enclosure [K]", GUILayout.Height(34)))
             {
-                sim.TriggerCrackAndShatter();
+                sim.TriggerCrack();
                 EditorApplication.QueuePlayerLoopUpdate();
                 SceneView.RepaintAll();
             }
         }
         else
         {
-            GUI.backgroundColor = new Color(0.25f, 0.9f, 0.45f);
-            if (GUILayout.Button("🔄 Restore & Repair Vessel (Reset Fluid)", GUILayout.Height(36)))
+            GUI.backgroundColor = new Color(0.3f, 0.9f, 0.4f);
+            if (GUILayout.Button("Repair & Reseal Enclosure [R]", GUILayout.Height(34)))
             {
-                sim.RestoreAndRepairVessel();
+                sim.RepairCrack();
                 EditorApplication.QueuePlayerLoopUpdate();
                 SceneView.RepaintAll();
             }
