@@ -455,10 +455,18 @@ public class ShowcaseCameraController : MonoBehaviour
         if (kb.digit6Key.wasPressedThisFrame) sel.SetFluid(5);
         if (kb.digit7Key.wasPressedThisFrame) sel.SetFluid(6);
 
-        // 7. Week 10 Structural Cracking / Repair via [K] and [R] keys
-        if (kb.kKey.wasPressedThisFrame && sel.Week10Sim != null)
+        // 7. Week 10 Structural Cracking / Repair (Keyboard shortcut)
+        if (sel.Week10Sim != null)
         {
-            sel.Week10Sim.TriggerStructuralCrack();
+            if (kb.kKey.wasPressedThisFrame)
+            {
+                if (!sel.Week10Sim.isCracked && !sel.Week10Sim.isShattered) sel.Week10Sim.TriggerCrackAndShatter();
+                else sel.Week10Sim.RestoreAndRepairVessel();
+            }
+            if (kb.rKey.wasPressedThisFrame)
+            {
+                sel.Week10Sim.RestoreAndRepairVessel();
+            }
         }
 
         // 8. Dynamic Fill Adjustment with [ and ] bracket keys
@@ -1002,32 +1010,38 @@ public class ShowcaseCameraController : MonoBehaviour
                 sel.Week10Sim.enableAutoFillDrainCycle = GUILayout.Toggle(sel.Week10Sim.enableAutoFillDrainCycle, "Auto Cycle");
                 GUILayout.EndHorizontal();
 
-                // Structural Fracture & Torricelli Outflow Controls
-                GUILayout.Space(2);
+                // Physical Shatter & Fluid Outflow Controls
+                GUILayout.Space(3);
                 GUILayout.BeginHorizontal();
-                if (sel.Week10Sim.isCracked)
+                if (sel.Week10Sim.isCracked || sel.Week10Sim.isShattered)
                 {
-                    GUI.backgroundColor = new Color(0.3f, 0.85f, 0.4f);
-                    if (GUILayout.Button("<b>[REPAIR CRACK (R)]</b>")) sel.Week10Sim.RepairStructuralCrack();
+                    GUI.backgroundColor = new Color(0.25f, 0.90f, 0.45f);
+                    if (GUILayout.Button("<b>🔄 RESTORE & REPAIR VESSEL (RESET FLUID)</b>", GUILayout.Height(38)))
+                    {
+                        sel.Week10Sim.RestoreAndRepairVessel();
+                    }
                     GUI.backgroundColor = Color.white;
                 }
                 else
                 {
-                    GUI.backgroundColor = new Color(1f, 0.35f, 0.25f);
-                    if (GUILayout.Button("<b>[CRACK ENCLOSURE (K)]</b>")) sel.Week10Sim.TriggerStructuralCrack();
+                    GUI.backgroundColor = new Color(1.0f, 0.28f, 0.20f);
+                    if (GUILayout.Button("<b>💥 BREAK & SHATTER VESSEL (FLUID OUTFLOW)</b>", GUILayout.Height(38)))
+                    {
+                        sel.Week10Sim.TriggerCrackAndShatter();
+                    }
                     GUI.backgroundColor = Color.white;
                 }
                 GUILayout.EndHorizontal();
 
                 // Real-time Torricelli Jet & Drainage Telemetry
-                if (sel.Week10Sim.isCracked)
+                if (sel.Week10Sim.isCracked || sel.Week10Sim.isShattered)
                 {
                     string flowColor = sel.Week10Sim.IsOutflowing ? "#FF8844" : "#888888";
-                    GUILayout.Label($"<color={flowColor}><b>Crack State:</b> OPEN ({sel.Week10Sim.crackApertureMm:F1} mm)</color> | Head \u0394h: <b>{sel.Week10Sim.CurrentHydrostaticHead * 100f:F1} cm</b>");
-                    GUILayout.Label($"<color={flowColor}><b>Exit Velocity:</b> {sel.Week10Sim.CurrentExitVelocity:F2} m/s | <b>Discharge Q:</b> {sel.Week10Sim.CurrentDischargeRateMlPerSec:F1} mL/s</color>");
+                    GUILayout.Label($"<color={flowColor}><b>Enclosure State:</b> SHATTERED & FRACTURED</color> | Head \u0394h: <b>{sel.Week10Sim.CurrentHydrostaticHead * 100f:F1} cm</b>");
+                    GUILayout.Label($"<color={flowColor}><b>Exit Velocity:</b> {sel.Week10Sim.CurrentExitVelocity:F2} m/s | <b>Outward Flow:</b> {sel.Week10Sim.CurrentDischargeRateMlPerSec:F1} mL/s</color>");
                     if (!sel.Week10Sim.IsOutflowing)
                     {
-                        GUILayout.Label("<i>(Outflow cut off: crack is above internal liquid surface level)</i>");
+                        GUILayout.Label("<i>(Outflow cut off / empty)</i>");
                     }
                 }
                 else
@@ -1136,5 +1150,70 @@ public class ShowcaseCameraController : MonoBehaviour
         GUILayout.EndHorizontal();
 
         GUILayout.EndArea();
+
+        // -------------------------------------------------------------
+        // Dedicated Floating On-Screen Action Bar for Vessel Breaking & Outflow
+        // -------------------------------------------------------------
+        Week10FluidCrackingFlowController targetWeek10 = null;
+        if (sel != null && sel.Week10Sim != null)
+        {
+            targetWeek10 = sel.Week10Sim;
+        }
+        else if (currentMode == CameraViewMode.Week10_EnclosedCrackingLine)
+        {
+            var allW10 = FindObjectsByType<Week10FluidCrackingFlowController>();
+            if (allW10 != null && allW10.Length > 0)
+            {
+                System.Array.Sort(allW10, (a, b) => a.transform.position.x.CompareTo(b.transform.position.x));
+                targetWeek10 = allW10[allW10.Length / 2];
+            }
+        }
+
+        if (targetWeek10 != null)
+        {
+            float barW = Mathf.Min(680f, Screen.width - 32f);
+            float barH = 58f;
+            Rect barRect = new Rect((Screen.width - barW) * 0.5f, Screen.height - barH - 12f, barW, barH);
+
+            GUI.backgroundColor = new Color(0.06f, 0.08f, 0.12f, 0.94f);
+            GUILayout.BeginArea(barRect, GUI.skin.box);
+            GUILayout.BeginHorizontal();
+
+            if (!targetWeek10.isCracked && !targetWeek10.isShattered)
+            {
+                GUI.backgroundColor = new Color(1.0f, 0.28f, 0.18f);
+                if (GUILayout.Button($"<b>💥 BREAK & CRACK OBJECT (FLUID FLOW OUTWARDS)</b>\n<size=10>Target: {targetWeek10.name}</size>", GUILayout.Height(44)))
+                {
+                    targetWeek10.TriggerCrackAndShatter();
+                }
+            }
+            else
+            {
+                GUI.backgroundColor = new Color(0.25f, 0.90f, 0.45f);
+                if (GUILayout.Button($"<b>🔄 RESTORE & RESET OBJECT</b>\n<size=10>Target: {targetWeek10.name} (Restores glass & fluid)</size>", GUILayout.Height(44)))
+                {
+                    targetWeek10.RestoreAndRepairVessel();
+                }
+            }
+
+            GUI.backgroundColor = new Color(0.35f, 0.65f, 0.95f);
+            if (GUILayout.Button("<b>↺ RESTART ALL</b>\n<size=10>Reset all vessels</size>", GUILayout.Width(135), GUILayout.Height(44)))
+            {
+                RestartAllWeek10Vessels();
+            }
+            GUI.backgroundColor = Color.white;
+
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
+        }
+    }
+
+    public void RestartAllWeek10Vessels()
+    {
+        var allW10 = FindObjectsByType<Week10FluidCrackingFlowController>();
+        foreach (var v in allW10)
+        {
+            if (v != null) v.RestoreAndRepairVessel();
+        }
     }
 }
