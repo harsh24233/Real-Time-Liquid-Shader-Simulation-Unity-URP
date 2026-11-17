@@ -148,6 +148,9 @@ MonoBehaviour:
   translationSensitivity: 1.2
   rotationSensitivity: 0.7
   maxWobbleDisplacement: 0.45
+  enableViscousCreepSlump: 1
+  gelYieldDelay: 0.55
+  gelSlumpDuration: 2.4
 --- !u!1 &5755957918115628875
 GameObject:
   m_ObjectHideFlags: 0

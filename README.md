@@ -71,6 +71,14 @@ The initial Week 7 foundation established 5 primary container models, separating
 LiquidShaderFirst/
 ├── Assets/
 │   ├── Materials/
+│   │   ├── Week10/                                       # Dedicated Week 10 enclosed systems materials (7 variants)
+│   │   │   ├── Week10_Petrol_Fluid.mat
+│   │   │   ├── Week10_Mercury_Fluid.mat
+│   │   │   ├── Week10_MotorOil_Fluid.mat
+│   │   │   ├── Week10_Coolant_Fluid.mat
+│   │   │   ├── Week10_CryoGas_Fluid.mat
+│   │   │   ├── Week10_TreeSap_Fluid.mat
+│   │   │   └── Week10_MazeGel_Fluid.mat
 │   │   ├── Week9/                                        # Dedicated Week 9 realistic fluid materials (7 variants)
 │   │   │   ├── Week9_Petrol_Fluid.mat
 │   │   │   ├── Week9_Mercury_Fluid.mat
@@ -90,12 +98,13 @@ LiquidShaderFirst/
 │   │   ├── Water_Fluid.mat
 │   │   └── glass.mat
 │   ├── Models/
-│   │   ├── Week9_*_Glass.obj                             # Week 9 complex structure glass enclosures (7)
-│   │   ├── Week9_*_Fluid.obj                             # Week 9 complex structure fluid volumes (7)
+│   │   ├── Week9_*_Glass.obj                             # Complex structure glass enclosures (7)
+│   │   ├── Week9_*_Fluid.obj                             # Complex structure fluid volumes (7)
 │   │   ├── Vessel_*_Glass.obj                            # Week 8 arbitrary geometry glass enclosures (12)
 │   │   ├── Vessel_*_Fluid.obj                            # Week 8 arbitrary geometry fluid volumes (12)
 │   │   └── Bottle_*_Glass.obj                            # Week 7 baseline models (5)
 │   ├── Prefabs/
+│   │   ├── Week10/                                       # Week 10 enclosed cracking & outward flow prefabs (7)
 │   │   ├── Week9/                                        # Week 9 realistic dynamics prefabs (7)
 │   │   │   ├── Week9_PetrolContainer_Jerrycan.prefab
 │   │   │   ├── Week9_StarShapedBox.prefab
@@ -107,12 +116,14 @@ LiquidShaderFirst/
 │   │   ├── Week2/                                        # Week 8 arbitrary geometry vessel prefabs (12)
 │   │   └── ...
 │   ├── Scenes/
-│   │   └── SampleScene.unity                             # 3-tier showcase amphitheater (Week 9, 8, 7)
+│   │   └── SampleScene.unity                             # 4-tier showcase amphitheater (Week 10, 9, 8, 7)
 │   ├── TutorialInfo/
 │   │   └── Editor/
+│   │       ├── SetupWeek10Showcase.cs                    # Automated Week 10 showcase assembler
 │   │       ├── SetupWeek9Showcase.cs                     # Automated Week 9 showcase assembler
 │   │       ├── SetupArbitraryGeometryShowcase.cs         # Automated Week 8 showcase assembler
 │   │       └── SetupFluidContainers.cs                   # Automated Week 7 showcase assembler
+│   ├── Week10FluidCrackingFlowController.cs              # Week 10 physics: Complete Fill, Morphology & Cracking Outflow
 │   ├── Week9FluidDynamicsController.cs                   # Week 9 physics: Density, Viscosity, & Dynamic Fill
 │   ├── ArbitraryViscousFluidFriction.cs                  # Week 8 physics: Navier-Stokes boundary friction
 │   ├── LiquidShaderGrapjh.shadergraph                    # Core URP fluid shader graph
@@ -239,7 +250,60 @@ Shallow fill levels exhibit longer wave periods, while deeper fill levels shift 
 
 ---
 
-## 10. Showcase Controls & Interactive In-Game Authority
+## 10. Week 10 Extension: Complete Fill Shader Pipeline, Dynamic Internal Morphology & Structural Cracking Outward Flow
+
+The Week 10 update introduces an advanced structural integrity, morphological adaptation, and outward orifice flow architecture developed **independently without regressing or modifying Week 7, 8, or 9 pipelines**:
+
+### 10.1 Complete Fill Shader Pipeline ($0.0 \to 1.0$)
+Previous liquid shaders suffered from clipping gaps at 100% capacity and residual fluid at 0%. Week 10 implements a complete fill pipeline:
+1. **$100\%$ Complete Fill ($F \ge 0.999$)**:
+   - The cut plane is elevated strictly above the uppermost internal boundary mesh vertex:
+     $$Y_{\mathrm{cut}} = Y_{\max} + 0.05\,\mathrm{m}$$
+   - The vessel is completely filled and sealed solid up to the ceiling with zero clipping, tears, or void gaps.
+   - Slosh amplitude envelope $\Psi_{\mathrm{fill}}(F) = 4F(1-F) \to 0$ naturally suppresses surface wobble, matching the physics of hermetically sealed, pressurized liquid enclosures.
+2. **$0\%$ Evacuation ($F \le 0.001$)**:
+   - The cut plane drops strictly below the bottom vertex ($Y_{\mathrm{cut}} = Y_{\min} - 0.05\,\mathrm{m}$), fully emptying the internal chamber.
+3. **Continuous Interpolation**:
+   - Seamless, artifact-free volume transitions driven in real time via `MaterialPropertyBlock` through property `_Float`.
+
+---
+
+### 10.2 Internal Geometry Morphological Adaptation
+Arbitrary enclosed structures exhibit complex non-uniform cross-sections $A(y)$. In Week 10, the liquid surface dynamically adapts its level and internal distribution to the container geometry:
+- **Jerrycan Neck Transition**: Bulk reservoir ($70\%$ volume) transitions into a narrow pouring spout neck ($30\%$ volume) where fill height rises rapidly.
+- **Star-Shaped Box**: Acute 5-pointed star prisms expand nonlinearly with volume fraction ($F^{1.25}$).
+- **Toroidal Tank**: Central void creates annular bifurcation, splitting the liquid volume into dual side columns with hydrostatic equilibrium across the waist.
+- **Y-Junction Piping Manifold**: Trunk volume divides symmetrically into dual angled branches, maintaining communicating vessel hydrostatic equilibrium under arbitrary tilt.
+- **Capsule Tank**: Smooth cubic transitions ($3y^2 - 2y^3$) across the bottom and top hemispherical dome caps.
+- **Tree Branch Structure**: Dendritic multi-tier hierarchy distributes liquid across trunk ($40\%$), 3 primary limbs ($35\%$), and 6 capillary spouts ($25\%$).
+- **Multichambered Maze**: 4-chamber labyrinth with underflow slots and overflow weir crests dictating multi-stage liquid leveling.
+
+---
+
+### 10.3 Structural Cracking & Physical Outward Fluid Flow
+If the enclosed vessel suffers structural fracture, the pressurized fluid discharges into the external environment:
+1. **Interactive & Dynamic Fracture**:
+   - Breach the enclosure via `[K]` key, on-screen HUD button, or Inspector context menu.
+   - Triggers an emissive fracture fissure visual along the vessel wall at local crack coordinates.
+2. **Torricelli Orifice Efflux Mechanics**:
+   - Calculates real-time hydrostatic head in world space:
+     $$\Delta h = \max\left(0,\, \mathbf{n}_{\mathrm{grav}} \cdot (\mathbf{P}_{\mathrm{surface}} - \mathbf{P}_{\mathrm{crack}})\right)$$
+   - Outward jet exit velocity:
+     $$v_{\mathrm{exit}} = C_d(\mu) \sqrt{2 g \Delta h}$$
+     where discharge coefficient $C_d(\mu)$ accounts for fluid dynamic viscosity ($0.65$ for petrol/water down to $0.12$ for heavy maze gel).
+   - Volumetric drainage rate:
+     $$\frac{dV}{dt} = -A_{\mathrm{crack}} \cdot v_{\mathrm{exit}}$$
+     reducing internal fill level $F$ continuously.
+3. **Directional 3D Parabolic Jet Stream**:
+   - Rendered using a dynamic `LineRenderer` ballistic physics arc projecting outward along wall normal $\mathbf{n}_{\mathrm{crack}}$, curved downwards under gravity $\mathbf{g}$.
+   - High-velocity splash particle emitter creates fluid splashes and mist at the jet contact point.
+   - Stream color dynamically inherits calibrated fluid optical tint.
+4. **Dynamic Cut-Off Under Tilt**:
+   - If the container is tilted or inverted such that the crack orifice rises above the internal liquid surface level ($\Delta h = 0$), the hydrostatic head drops to zero, the pressurized outward jet instantly cuts off, and liquid drainage pauses!
+
+---
+
+## 11. Showcase Controls & Interactive In-Game Authority
 
 ### Camera Navigation Controls
 - **`[WASD]` / `[Arrow Keys]`**: Fly camera freely across the showcase without sticking or key collisions.
@@ -247,8 +311,9 @@ Shallow fill levels exhibit longer wave periods, while deeper fill levels shift 
 - **`[Shift]`**: Sprint multiplier ($2.5\times$ speed).
 - **`[Space] / [E]`**: Fly upward.
 - **`[C] / [Ctrl] / [Q]`**: Fly downward.
-- **`[F1]`**: **Overview Mode** (frames all 3 showcase tiers).
-- **`[F6]`**: **Week 9 Showcase Line** (frames the 7 new realistic structures).
+- **`[F1]`**: **Overview Mode** (frames all 4 showcase tiers).
+- **`[F7]`**: **Week 10 Showcase Line** (frames the 7 enclosed cracking structures).
+- **`[F6]`**: **Week 9 Showcase Line** (frames the 7 realistic rheology structures).
 - **`[F2]`**: **Week 8 Showcase Line** (frames the 12 arbitrary geometry vessels).
 - **`[F3]`**: **Week 7 Baseline Line** (frames the original 5 containers).
 - **`[F4]`**: **Focus Camera** on selected vessel.
@@ -269,26 +334,28 @@ Shallow fill levels exhibit longer wave periods, while deeper fill levels shift 
   - Real-time Euler orientation telemetry: $\mathrm{Rot}(Pitch^\circ, Yaw^\circ, Roll^\circ)$.
   - 1-click rotation buttons: `Pitch ±15°`, `Yaw ±15°`, `Roll ±15°`, `Invert 180° (Upside-Down)`, `Level Upright 0°`.
 - **Mouse Scroll Wheel**: Push or pull the dragged container closer or further in depth ($Z$-axis).
-- **Constant Fluid Volume Invariance**: Vertically dragging or nudging containers up and down in 3D maintains 100% constant fluid fill level without draining or overfilling across all 24 vessels.
+- **Constant Fluid Volume Invariance**: Vertically dragging or nudging containers up and down in 3D maintains 100% constant fluid fill level without draining or overfilling.
 - **Continuous Scene View Preview**: Moving or rotating any container in Unity Editor Scene View (Edit Mode) continuously simulates spring-mass-damper sloshing and fluid settling without freezing.
-- **`[` / `]`**: Dynamically decrease or increase fluid fill level ($F$) in real-time. Watch sloshing peak at $50\%$ and suppress at $10\%$ and $95\%$.
+- **`[` / `]`**: Dynamically decrease or increase fluid fill level ($F \in [0.0, 1.0]$) in real-time.
+- **`[K]`**: Trigger structural crack and initiate outward Torricelli fluid efflux.
+- **`[R]`**: Repair and reseal structural crack / reset vessel to shelf plinth.
 - **`[Alt + Arrow Keys]`**: Nudge selected bottle position in 3D.
-- **`[1-7]`**: Switch fluid profile (Petrol, Mercury, Motor Oil, Coolant, CryoGas, Tree Sap, Maze Gel) on the selected Week 9 vessel.
-- **`[R]`**: Reset selected vessel to its original shelf plinth.
-- **`[Backspace]`**: Reset all vessels across all 3 tiers.
+- **`[1-7]`**: Switch fluid profile (Petrol, Mercury, Motor Oil, Coolant, CryoGas, Tree Sap, Maze Gel) on the selected vessel.
+- **`[Backspace]`**: Reset all vessels across all tiers.
 
 ---
 
-## 11. Automated Editor Setup Tools
+## 12. Automated Editor Setup Tools
 
 The project includes editor tools under the Unity menu bar:
-- **`Tools > Setup Week 9 - Realistic Fluid Dynamics & Dynamic Fill Showcase`**: Automatically creates Week 9 models, prefabs, materials, and assembles the front showcase tier.
+- **`Tools > Setup Week 10 - Enclosed Cracking & Outward Flow Showcase`**: Automatically creates Week 10 models, prefabs, materials, and assembles the front tier with structural cracking controllers.
+- **`Tools > Setup Week 9 - Realistic Fluid Dynamics & Dynamic Fill Showcase`**: Automatically creates Week 9 models, prefabs, materials, and assembles the realistic fluid tier.
 - **`Tools > Setup Week 2 - Arbitrary Geometry Showcase`**: Assembles the 12 Week 8 arbitrary geometry vessels.
 - **`Tools > Setup Fluid Containers`**: Assembles the 5 Week 7 baseline bottles.
 
 ---
 
-## 12. Version Control & Contribution Rules
+## 13. Version Control & Contribution Rules
 
 - Generated Unity folders (`Library/`, `Temp/`, `Obj/`, `Logs/`, `UserSettings/`) are excluded via `.gitignore`.
 - All Unity `.meta` files are tracked to ensure asset GUID integrity.
@@ -296,7 +363,7 @@ The project includes editor tools under the Unity menu bar:
 
 ---
 
-## 13. Author & Academic Context
+## 14. Author & Academic Context
 
 **Harsh**  
 Indraprastha Institute of Information Technology Delhi (IIIT-Delhi)  

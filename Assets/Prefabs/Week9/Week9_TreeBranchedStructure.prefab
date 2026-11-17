@@ -328,3 +328,6 @@ MonoBehaviour:
   translationSensitivity: 1.2
   rotationSensitivity: 0.7
   maxWobbleDisplacement: 0.45
+  enableViscousCreepSlump: 1
+  gelYieldDelay: 0.55
+  gelSlumpDuration: 2.4
