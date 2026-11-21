@@ -652,9 +652,12 @@ public class UniversalAdaptiveFluidController : MonoBehaviour
             if (surfaceCapMR == null) surfaceCapMR = surfaceMeniscusCapObj.AddComponent<MeshRenderer>();
         }
 
-        if (surfaceMeniscusCapObj != null)
+        if (surfaceCapMR != null)
         {
-            surfaceMeniscusCapObj.SetActive(true);
+            surfaceCapMR.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            surfaceCapMR.receiveShadows = false;
+            surfaceCapMR.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+            surfaceCapMR.allowOcclusionWhenDynamic = false;
         }
 
         FluidPreset prof = GetActivePreset();
@@ -728,14 +731,19 @@ public class UniversalAdaptiveFluidController : MonoBehaviour
         Vector3 localPlanePoint = fluidRenderer.transform.InverseTransformPoint(worldPlanePoint);
 
         Mesh capMesh = MeshPlaneSlicer.GenerateCapMesh(fmf.sharedMesh, localPlanePoint, localPlaneNormal);
-        if (capMesh != null)
+        if (capMesh != null && capMesh.vertexCount > 2)
         {
             surfaceCapMF.sharedMesh = capMesh;
             surfaceCapMR.enabled = true;
+            if (surfaceMeniscusCapObj != null && !surfaceMeniscusCapObj.activeSelf)
+                surfaceMeniscusCapObj.SetActive(true);
         }
         else
         {
-            surfaceCapMR.enabled = false;
+            if (surfaceCapMR != null) surfaceCapMR.enabled = false;
+            if (surfaceCapMF != null) surfaceCapMF.sharedMesh = null;
+            if (surfaceMeniscusCapObj != null && surfaceMeniscusCapObj.activeSelf)
+                surfaceMeniscusCapObj.SetActive(false);
         }
     }
 
@@ -1679,6 +1687,10 @@ public class UniversalAdaptiveFluidController : MonoBehaviour
         GameObject puddle = new GameObject("UniversalFluidPuddle");
         MeshFilter mf = puddle.AddComponent<MeshFilter>();
         MeshRenderer mr = puddle.AddComponent<MeshRenderer>();
+        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        mr.receiveShadows = false;
+        mr.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+        mr.allowOcclusionWhenDynamic = false;
 
         const int segs = 36;
         Vector3[] pVerts = new Vector3[1 + segs * 2];
